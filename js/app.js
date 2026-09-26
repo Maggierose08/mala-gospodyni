@@ -617,12 +617,20 @@ function renderProfile() {
             ? `<img class="avatar-preview" src="${user.avatar}" alt="Your profile picture">`
             : `<div class="avatar-preview placeholder">${ICONS.person}</div>`}
           <div>
-            <p class="hint" style="margin-bottom:8px;">👤 <strong>${escapeHtml(user.username || user.email)}</strong><br>${escapeHtml(user.email)}</p>
+            <p class="hint" style="margin-bottom:8px;">${escapeHtml(user.email)}</p>
             <input type="file" id="avatar-input" accept="image/*" style="display:none;">
             <button class="btn secondary" type="button" id="avatar-btn">Change Photo</button>
           </div>
         </div>
         <p id="avatar-status" class="hint"></p>
+        <div class="field">
+          <label for="username-input">Username <span class="muted-msg">(what friends will search for you by)</span></label>
+          <input type="text" id="username-input" value="${escapeHtml(user.username || "")}">
+        </div>
+        <div class="recipe-actions">
+          <button class="btn" id="save-username-btn">Save Username</button>
+        </div>
+        <p id="username-status" class="hint"></p>
         <div class="field">
           <label for="contact-info">Contact info <span class="muted-msg">(for friends &amp; family, coming later — optional)</span></label>
           <input type="text" id="contact-info" placeholder="e.g. a phone number or note" value="${escapeHtml(user.contactInfo || "")}">
@@ -808,6 +816,23 @@ function wireProfile() {
         grantBtn.disabled = false;
       });
     }
+
+    const saveUsernameBtn = document.getElementById("save-username-btn");
+    saveUsernameBtn.addEventListener("click", async () => {
+      const status = document.getElementById("username-status");
+      const newUsername = document.getElementById("username-input").value.trim();
+      if (!newUsername) { status.textContent = "Please enter a username."; return; }
+      saveUsernameBtn.disabled = true;
+      status.textContent = "Saving…";
+      try {
+        await window.MG.changeUsername(newUsername);
+        status.textContent = "Saved.";
+        // "mg-auth-changed" (fired by changeUsername) triggers the re-render.
+      } catch (err) {
+        status.textContent = "Couldn't save: " + (err.message || err);
+        saveUsernameBtn.disabled = false;
+      }
+    });
 
     const saveBtn = document.getElementById("save-contact-btn");
     saveBtn.addEventListener("click", async () => {

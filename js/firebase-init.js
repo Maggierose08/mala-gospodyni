@@ -122,10 +122,15 @@ onAuthStateChanged(auth, async (user) => {
 // The "usernames" collection's document id IS the (lowercased) username, so
 // two people racing to claim the same one is resolved atomically by
 // Firestore serializing the transaction — the second one simply fails.
-async function claimUsername(uid, email, username) {
-  const clean = username.trim();
+function validateUsername(raw) {
+  const clean = (raw || "").trim();
   if (clean.length < 3) throw new Error("Username needs to be at least 3 characters.");
   if (!/^[A-Za-z0-9_.-]+$/.test(clean)) throw new Error("Username can only use letters, numbers, and _ . -");
+  return clean;
+}
+
+async function claimUsername(uid, email, username) {
+  const clean = validateUsername(username);
   const key = clean.toLowerCase();
   const usernameRef = doc(db, "usernames", key);
   const userRef = doc(db, "users", uid);
@@ -193,6 +198,37 @@ window.MG = {
     if (!currentUser) throw new Error("Not signed in.");
     await setDoc(doc(db, "users", currentUser.uid), { contactInfo }, { merge: true });
     currentUser.contactInfo = contactInfo;
+  },
+
+  // Changing your username frees up the old one (so someone else could
+  // claim it) and atomically claims the new one — same uniqueness guarantee
+  // as signing up. Firestore's own rules only let a "usernames" mapping be
+  // deleted by the uid it was created for, so this can never free up or
+  // hijack someone else's username no matter what a client sends.
+  changeUsername: async (newUsername) => {
+    if (!currentUser) throw new Error("Not signed in.");
+    const clean = validateUsername(newUsername);
+    const newKey = clean.toLowerCase();
+    const oldKey = (currentUser.username || "").toLowerCase();
+    if (newKey === oldKey) return clean;
+    const newRef = doc(db, "usernames", newKey);
+    const oldRef = oldKey ? doc(db, "usernames", oldKey) : null;
+    const userRef = doc(db, "users", currentUser.uid);
+    await runTransaction(db, async (tx) => {
+      const existing = await tx.get(newRef);
+      if (existing.exists()) throw new Error("That username is already taken — try another.");
+      if (oldRef) tx.delete(oldRef);
+      tx.set(newRef, { uid: currentUser.uid });
+      tx.set(userRef, { username: clean }, { merge: true });
+    });
+    try {
+      await updateProfile(auth.currentUser, { displayName: clean });
+    } catch (e) {
+      console.error("Could not update auth display name", e);
+    }
+    currentUser.username = clean;
+    dispatch("mg-auth-changed", { user: currentUser });
+    return clean;
   },
 
   saveAvatar: async (dataUrl) => {
