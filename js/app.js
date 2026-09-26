@@ -707,6 +707,8 @@ function renderProfile() {
         <div class="recipe-actions">
           <button class="btn" id="signin-btn">Sign In</button>
         </div>
+        <button class="link-btn" type="button" id="forgot-password-btn">Forgot password?</button>
+        <p id="reset-status" class="hint"></p>
       `}
       <p class="hint">Signing in lets your recipes follow you to any phone or computer. Without an account, recipes stay saved on this device only.</p>
     </div>
@@ -902,6 +904,25 @@ function wireProfile() {
         profileError = err.message || "Sorry, something went wrong signing in.";
         render();
       }
+    });
+  }
+
+  const forgotBtn = document.getElementById("forgot-password-btn");
+  if (forgotBtn) {
+    forgotBtn.addEventListener("click", async () => {
+      const status = document.getElementById("reset-status");
+      const email = document.getElementById("signin-email").value.trim();
+      if (!email) { status.textContent = "Enter your email above first, then click this again."; return; }
+      if (!hasCloud()) { status.textContent = "Still connecting — please try again in a moment."; return; }
+      forgotBtn.disabled = true;
+      status.textContent = "Sending…";
+      try {
+        await window.MG.resetPassword(email);
+        status.textContent = "Check your email for a link to reset your password.";
+      } catch (err) {
+        status.textContent = "Couldn't send that: " + (err.message || err);
+      }
+      forgotBtn.disabled = false;
     });
   }
 

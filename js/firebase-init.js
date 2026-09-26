@@ -16,7 +16,7 @@ import {
 import {
   getAuth, onAuthStateChanged,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
-  updateProfile,
+  updateProfile, sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache,
@@ -192,6 +192,17 @@ window.MG = {
 
   signOutUser: async () => {
     await signOut(auth);
+  },
+
+  // Firebase never stores or exposes the actual password (only a one-way
+  // hash), so "recovering" it isn't possible for anyone, including us —
+  // this sends an email with a link to set a new one instead.
+  resetPassword: async (email) => {
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (err) {
+      throw new Error(friendlyAuthError(err));
+    }
   },
 
   saveContactInfo: async (contactInfo) => {
