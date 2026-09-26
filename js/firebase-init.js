@@ -20,9 +20,18 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache,
-  doc, getDoc, setDoc, deleteDoc, collection, onSnapshot, runTransaction,
+  doc, getDoc, getDocs, setDoc, deleteDoc, collection, onSnapshot, runTransaction,
   serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+
+// The one account allowed to grant free ("comped") access to friends &
+// family, and to see the full list of who currently has it. This is only
+// a convenience check for the UI (so the admin panel doesn't render for
+// anyone else) — the real enforcement lives entirely in the Firestore
+// security rules, which check this same email server-side on every single
+// read/write to the "grants" collection. Changing this constant here does
+// NOT grant anyone anything; only publishing matching security rules does.
+const ADMIN_EMAIL = "maggie13a2z@gmail.com";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD29WcDaRhoxUmPWXx_aOQlYtfYC2IUHKs",
@@ -74,16 +83,32 @@ onAuthStateChanged(auth, async (user) => {
   if (user) {
     let username = user.displayName || "";
     let contactInfo = "";
+    let avatar = "";
+    const isAdmin = user.email === ADMIN_EMAIL;
     try {
       const userSnap = await getDoc(doc(db, "users", user.uid));
       if (userSnap.exists()) {
         username = userSnap.data().username || username;
         contactInfo = userSnap.data().contactInfo || "";
+        avatar = userSnap.data().avatar || "";
       }
     } catch (e) {
       console.error("Could not load profile", e);
     }
-    currentUser = { uid: user.uid, email: user.email, username, contactInfo };
+    // Free ("comped") access for friends & family: the admin account always
+    // has it; anyone else only has it if a "grants/{uid}" document exists
+    // for them — which only the admin account can ever create (enforced by
+    // the Firestore security rules, not by this check).
+    let hasFreeAccess = isAdmin;
+    if (!isAdmin) {
+      try {
+        const grantSnap = await getDoc(doc(db, "grants", user.uid));
+        hasFreeAccess = grantSnap.exists() && grantSnap.data().granted === true;
+      } catch (e) {
+        console.error("Could not check free-access status", e);
+      }
+    }
+    currentUser = { uid: user.uid, email: user.email, username, contactInfo, avatar, isAdmin, hasFreeAccess };
     subscribeToRecipes(user.uid);
   } else {
     currentUser = null;
@@ -132,6 +157,8 @@ window.MG = {
   ready,
   getCurrentUser: () => currentUser,
   getCloudRecipes: () => cloudRecipes,
+  isAdmin: () => !!(currentUser && currentUser.isAdmin),
+  hasFreeAccess: () => !!(currentUser && currentUser.hasFreeAccess),
 
   signUp: async (email, password, username) => {
     let cred;
@@ -166,6 +193,40 @@ window.MG = {
     if (!currentUser) throw new Error("Not signed in.");
     await setDoc(doc(db, "users", currentUser.uid), { contactInfo }, { merge: true });
     currentUser.contactInfo = contactInfo;
+  },
+
+  saveAvatar: async (dataUrl) => {
+    if (!currentUser) throw new Error("Not signed in.");
+    await setDoc(doc(db, "users", currentUser.uid), { avatar: dataUrl }, { merge: true });
+    currentUser.avatar = dataUrl;
+    dispatch("mg-auth-changed", { user: currentUser });
+  },
+
+  // ---- Friends & family free access (admin-only; enforced by security rules) ----
+  grantFriendAccess: async (username) => {
+    if (!currentUser || !currentUser.isAdmin) throw new Error("Only the app owner can grant free access.");
+    const key = username.trim().toLowerCase();
+    if (!key) throw new Error("Please enter a username.");
+    const usernameSnap = await getDoc(doc(db, "usernames", key));
+    if (!usernameSnap.exists()) throw new Error("No account found with that username.");
+    const friendUid = usernameSnap.data().uid;
+    await setDoc(doc(db, "grants", friendUid), {
+      granted: true,
+      grantedTo: username.trim(),
+      grantedAt: serverTimestamp(),
+    });
+    return username.trim();
+  },
+
+  revokeFriendAccess: async (uid) => {
+    if (!currentUser || !currentUser.isAdmin) throw new Error("Only the app owner can change free access.");
+    await deleteDoc(doc(db, "grants", uid));
+  },
+
+  listGrants: async () => {
+    if (!currentUser || !currentUser.isAdmin) throw new Error("Only the app owner can view this.");
+    const snap = await getDocs(collection(db, "grants"));
+    return snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
   },
 
   upsertRecipe: async (recipe) => {

@@ -612,7 +612,17 @@ function renderProfile() {
       ${pageHeader("Profile")}
       <div class="card">
         <h2>Signed in</h2>
-        <p class="hint">👤 <strong>${escapeHtml(user.username || user.email)}</strong><br>${escapeHtml(user.email)}</p>
+        <div class="avatar-row">
+          ${user.avatar
+            ? `<img class="avatar-preview" src="${user.avatar}" alt="Your profile picture">`
+            : `<div class="avatar-preview placeholder">${ICONS.person}</div>`}
+          <div>
+            <p class="hint" style="margin-bottom:8px;">👤 <strong>${escapeHtml(user.username || user.email)}</strong><br>${escapeHtml(user.email)}</p>
+            <input type="file" id="avatar-input" accept="image/*" style="display:none;">
+            <button class="btn secondary" type="button" id="avatar-btn">Change Photo</button>
+          </div>
+        </div>
+        <p id="avatar-status" class="hint"></p>
         <div class="field">
           <label for="contact-info">Contact info <span class="muted-msg">(for friends &amp; family, coming later — optional)</span></label>
           <input type="text" id="contact-info" placeholder="e.g. a phone number or note" value="${escapeHtml(user.contactInfo || "")}">
@@ -630,6 +640,22 @@ function renderProfile() {
           <button class="btn" id="migrate-btn">Add to my account</button>
           <button class="btn secondary" id="dismiss-migrate-btn">Not now</button>
         </div>
+      </div>` : ""}
+      ${user.isAdmin ? `
+      <div class="card">
+        <h2>Friends &amp; Family free access</h2>
+        <p class="hint">Give a specific person full access with no subscription, ever — enforced by the database itself, so no one else can grant this to themselves.</p>
+        <div class="row-flex">
+          <div class="field" style="flex:1; min-width:160px;">
+            <label for="grant-username">Their username</label>
+            <input type="text" id="grant-username" placeholder="e.g. janes_kitchen">
+          </div>
+        </div>
+        <div class="recipe-actions">
+          <button class="btn" id="grant-btn">Grant free access</button>
+        </div>
+        <p id="grant-status" class="hint"></p>
+        <div id="grants-list" style="margin-top:10px;">Loading current list…</div>
       </div>` : ""}
       <div class="card">
         <button class="btn danger" id="sign-out-btn">Sign Out</button>
@@ -679,8 +705,110 @@ function renderProfile() {
   `;
 }
 
+// Reads an image file, crops it to a square, and shrinks it to a small
+// (200x200) JPEG data URL — small enough to store directly on the user's
+// Firestore profile document, so profile pictures don't need Firebase
+// Storage (which requires a paid billing plan) or any other paid service.
+function fileToAvatarDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Sorry, that photo couldn't be read."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("That file doesn't look like a valid image."));
+      img.onload = () => {
+        const size = 200;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const scale = Math.max(size / img.width, size / img.height);
+        const w = img.width * scale, h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderGrantRow(g) {
+  return `
+    <div class="grant-row" data-uid="${g.uid}">
+      <span>${escapeHtml(g.grantedTo || g.uid)}</span>
+      <button type="button" class="remove-btn revoke-grant-btn" data-uid="${g.uid}" title="Revoke free access">×</button>
+    </div>`;
+}
+
 function wireProfile() {
   if (hasCloud() && isSignedIn()) {
+    const avatarInput = document.getElementById("avatar-input");
+    const avatarBtn = document.getElementById("avatar-btn");
+    const avatarStatus = document.getElementById("avatar-status");
+    avatarBtn.addEventListener("click", () => avatarInput.click());
+    avatarInput.addEventListener("change", async () => {
+      const file = avatarInput.files[0];
+      if (!file) return;
+      avatarBtn.disabled = true;
+      avatarStatus.textContent = "Uploading…";
+      try {
+        const dataUrl = await fileToAvatarDataUrl(file);
+        await window.MG.saveAvatar(dataUrl);
+        avatarStatus.textContent = "Saved.";
+        // "mg-auth-changed" (fired by saveAvatar) triggers the re-render.
+      } catch (err) {
+        avatarStatus.textContent = "Couldn't save that photo: " + (err.message || err);
+        avatarBtn.disabled = false;
+      }
+    });
+
+    const grantBtn = document.getElementById("grant-btn");
+    if (grantBtn) {
+      const grantStatus = document.getElementById("grant-status");
+      const grantsList = document.getElementById("grants-list");
+
+      function loadGrants() {
+        window.MG.listGrants().then((list) => {
+          grantsList.innerHTML = list.length
+            ? list.map(renderGrantRow).join("")
+            : `<p class="muted-msg">No one has free access yet.</p>`;
+          grantsList.querySelectorAll(".revoke-grant-btn").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              btn.disabled = true;
+              try {
+                await window.MG.revokeFriendAccess(btn.getAttribute("data-uid"));
+                loadGrants();
+              } catch (err) {
+                alert("Couldn't revoke access: " + (err.message || err));
+                btn.disabled = false;
+              }
+            });
+          });
+        }).catch((err) => {
+          grantsList.innerHTML = `<p class="muted-msg">Couldn't load the list: ${escapeHtml(err.message || String(err))}</p>`;
+        });
+      }
+      loadGrants();
+
+      grantBtn.addEventListener("click", async () => {
+        const usernameInput = document.getElementById("grant-username");
+        const username = usernameInput.value.trim();
+        if (!username) { grantStatus.textContent = "Please enter a username."; return; }
+        grantBtn.disabled = true;
+        grantStatus.textContent = "Granting…";
+        try {
+          const granted = await window.MG.grantFriendAccess(username);
+          grantStatus.textContent = `${granted} now has free access.`;
+          usernameInput.value = "";
+          loadGrants();
+        } catch (err) {
+          grantStatus.textContent = "Couldn't grant access: " + (err.message || err);
+        }
+        grantBtn.disabled = false;
+      });
+    }
+
     const saveBtn = document.getElementById("save-contact-btn");
     saveBtn.addEventListener("click", async () => {
       const status = document.getElementById("profile-status");
@@ -857,13 +985,27 @@ function wireGlobalClicks() {
 function refreshIfRelevant(routeNames) {
   if (routeNames.includes(currentRoute().name)) render();
 }
-window.addEventListener("mg-auth-changed", () => refreshIfRelevant(["#/profile", "#/recipes", "scale", "allergen"]));
+
+// Swaps the topbar's person icon for the signed-in user's own profile
+// picture (if they've set one), or back to the plain icon when signed out.
+function updateProfileButton() {
+  const btn = document.getElementById("profile-btn");
+  const user = hasCloud() ? window.MG.getCurrentUser() : null;
+  btn.innerHTML = user && user.avatar
+    ? `<img class="avatar-img" src="${user.avatar}" alt="Your profile">`
+    : ICONS.person;
+}
+
+window.addEventListener("mg-auth-changed", () => {
+  updateProfileButton();
+  refreshIfRelevant(["#/profile", "#/recipes", "scale", "allergen"]);
+});
 window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "scale", "allergen", "#/profile"]));
 
 window.addEventListener("hashchange", render);
 window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("brand-home-btn").innerHTML = `${ICONS.pot} <span>Mała Gospodyni</span>`;
-  document.getElementById("profile-btn").innerHTML = ICONS.person;
+  updateProfileButton();
   document.getElementById("brand-home-btn").addEventListener("click", () => { location.hash = "#/home"; });
   document.getElementById("profile-btn").addEventListener("click", () => { location.hash = "#/profile"; });
   if (!location.hash) location.hash = "#/home";
