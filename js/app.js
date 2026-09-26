@@ -18,9 +18,22 @@ const ICONS = {
 };
 
 // ---------- Storage ----------
+// Signed out: recipes live in this browser's localStorage, exactly as in
+// Phase 1. Signed in: recipes live in Firestore (via window.MG, set up by
+// firebase-init.js) and sync across every device you're signed into — the
+// local cloudRecipes cache below is kept fresh by its "mg-recipes-changed"
+// event, so reads here stay synchronous either way.
 const STORAGE_KEY = "mg_recipes_v1";
 
-function getRecipes() {
+function hasCloud() {
+  return typeof window.MG !== "undefined";
+}
+
+function isSignedIn() {
+  return hasCloud() && !!window.MG.getCurrentUser();
+}
+
+function getLocalRecipes() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
@@ -30,24 +43,37 @@ function getRecipes() {
   }
 }
 
-function saveRecipes(list) {
+function saveLocalRecipes(list) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
+function getRecipes() {
+  if (isSignedIn()) return window.MG.getCloudRecipes();
+  return getLocalRecipes();
 }
 
 function getRecipe(id) {
   return getRecipes().find((r) => r.id === id) || null;
 }
 
+// Returns a promise so callers that need to know when a cloud write has
+// actually gone through can await it; signed-out (localStorage) writes are
+// synchronous under the hood but still return a resolved promise, so the
+// calling code doesn't need an if/else for the two modes.
 function upsertRecipe(recipe) {
-  const list = getRecipes();
+  if (isSignedIn()) return window.MG.upsertRecipe(recipe);
+  const list = getLocalRecipes();
   const idx = list.findIndex((r) => r.id === recipe.id);
   if (idx >= 0) list[idx] = recipe;
   else list.push(recipe);
-  saveRecipes(list);
+  saveLocalRecipes(list);
+  return Promise.resolve();
 }
 
 function deleteRecipe(id) {
-  saveRecipes(getRecipes().filter((r) => r.id !== id));
+  if (isSignedIn()) return window.MG.deleteRecipeCloud(id);
+  saveLocalRecipes(getLocalRecipes().filter((r) => r.id !== id));
+  return Promise.resolve();
 }
 
 function newId() {
@@ -168,8 +194,13 @@ function renderRecipesList() {
         </div>`).join("")
     : `<p class="muted-msg">No recipes saved yet — add your first one below.</p>`;
 
+  const syncNote = isSignedIn()
+    ? `<p class="hint">☁ Synced to your account — these recipes follow you to any device you sign into.</p>`
+    : `<p class="hint">💾 Saved on this device only. <a href="#/profile">Sign in</a> to sync recipes across your phone and computer.</p>`;
+
   return `
     ${pageHeader("Recipes")}
+    ${syncNote}
     ${rows}
     <div class="recipe-actions">
       <button class="btn" id="new-recipe-btn">+ New Recipe</button>
@@ -314,7 +345,8 @@ function wireRecipeForm(id) {
     document.getElementById("scan-reminder").style.display = "block";
   });
 
-  document.getElementById("save-recipe-btn").addEventListener("click", () => {
+  const saveBtn = document.getElementById("save-recipe-btn");
+  saveBtn.addEventListener("click", async () => {
     const title = document.getElementById("recipe-title").value.trim();
     const servings = parseFloat(document.getElementById("orig-servings").value);
     const steps = document.getElementById("recipe-steps").value;
@@ -324,16 +356,30 @@ function wireRecipeForm(id) {
       id: existing ? existing.id : newId(),
       title, servings: isNaN(servings) ? 0 : servings, ingredients, steps,
     };
-    upsertRecipe(recipe);
-    location.hash = "#/recipes";
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving…";
+    try {
+      await upsertRecipe(recipe);
+      location.hash = "#/recipes";
+    } catch (err) {
+      console.error("Could not save recipe", err);
+      alert("Sorry, that recipe couldn't be saved: " + (err.message || err));
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save Recipe";
+    }
   });
 
   const deleteBtn = document.getElementById("delete-recipe-btn");
   if (deleteBtn) {
-    deleteBtn.addEventListener("click", () => {
+    deleteBtn.addEventListener("click", async () => {
       if (confirm("Delete this recipe? This can't be undone.")) {
-        deleteRecipe(existing.id);
-        location.hash = "#/recipes";
+        try {
+          await deleteRecipe(existing.id);
+          location.hash = "#/recipes";
+        } catch (err) {
+          console.error("Could not delete recipe", err);
+          alert("Sorry, that recipe couldn't be deleted: " + (err.message || err));
+        }
       }
     });
   }
@@ -553,6 +599,179 @@ function wireTemp() {
   });
 }
 
+// ---------- View: Profile (Phase 2 — accounts & sync) ----------
+let profileMode = "signin"; // "signin" | "signup" — remembers which tab was showing across re-renders
+let profileError = "";
+let migrationDismissed = false;
+
+function renderProfile() {
+  if (hasCloud() && isSignedIn()) {
+    const user = window.MG.getCurrentUser();
+    const localCount = migrationDismissed ? 0 : getLocalRecipes().length;
+    return `
+      ${pageHeader("Profile")}
+      <div class="card">
+        <h2>Signed in</h2>
+        <p class="hint">👤 <strong>${escapeHtml(user.username || user.email)}</strong><br>${escapeHtml(user.email)}</p>
+        <div class="field">
+          <label for="contact-info">Contact info <span class="muted-msg">(for friends &amp; family, coming later — optional)</span></label>
+          <input type="text" id="contact-info" placeholder="e.g. a phone number or note" value="${escapeHtml(user.contactInfo || "")}">
+        </div>
+        <div class="recipe-actions">
+          <button class="btn" id="save-contact-btn">Save</button>
+        </div>
+        <p id="profile-status" class="hint"></p>
+      </div>
+      ${localCount > 0 ? `
+      <div class="card">
+        <h2>Recipes on this device</h2>
+        <p class="hint">You have ${localCount} recipe${localCount === 1 ? "" : "s"} saved on this device from before you signed in. Add ${localCount === 1 ? "it" : "them"} to your account so ${localCount === 1 ? "it syncs" : "they sync"} everywhere?</p>
+        <div class="recipe-actions">
+          <button class="btn" id="migrate-btn">Add to my account</button>
+          <button class="btn secondary" id="dismiss-migrate-btn">Not now</button>
+        </div>
+      </div>` : ""}
+      <div class="card">
+        <button class="btn danger" id="sign-out-btn">Sign Out</button>
+      </div>
+    `;
+  }
+
+  return `
+    ${pageHeader("Profile")}
+    <div class="card">
+      <div class="row-flex" style="margin-bottom:16px;">
+        <button class="btn ${profileMode === "signin" ? "" : "secondary"}" type="button" id="tab-signin" style="flex:1;">Sign In</button>
+        <button class="btn ${profileMode === "signup" ? "" : "secondary"}" type="button" id="tab-signup" style="flex:1;">Create Account</button>
+      </div>
+      ${profileError ? `<div class="disclaimer">${escapeHtml(profileError)}</div>` : ""}
+      ${profileMode === "signup" ? `
+        <div class="field">
+          <label for="signup-username">Username</label>
+          <input type="text" id="signup-username" placeholder="e.g. maggies_kitchen">
+        </div>
+        <div class="field">
+          <label for="signup-email">Email</label>
+          <input type="email" id="signup-email" placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label for="signup-password">Password</label>
+          <input type="password" id="signup-password" placeholder="At least 6 characters">
+        </div>
+        <div class="recipe-actions">
+          <button class="btn" id="signup-btn">Create Account</button>
+        </div>
+      ` : `
+        <div class="field">
+          <label for="signin-email">Email</label>
+          <input type="email" id="signin-email" placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label for="signin-password">Password</label>
+          <input type="password" id="signin-password" placeholder="Your password">
+        </div>
+        <div class="recipe-actions">
+          <button class="btn" id="signin-btn">Sign In</button>
+        </div>
+      `}
+      <p class="hint">Signing in lets your recipes follow you to any phone or computer. Without an account, recipes stay saved on this device only.</p>
+    </div>
+  `;
+}
+
+function wireProfile() {
+  if (hasCloud() && isSignedIn()) {
+    const saveBtn = document.getElementById("save-contact-btn");
+    saveBtn.addEventListener("click", async () => {
+      const status = document.getElementById("profile-status");
+      saveBtn.disabled = true;
+      try {
+        await window.MG.saveContactInfo(document.getElementById("contact-info").value.trim());
+        status.textContent = "Saved.";
+      } catch (err) {
+        status.textContent = "Couldn't save: " + (err.message || err);
+      }
+      saveBtn.disabled = false;
+    });
+
+    const migrateBtn = document.getElementById("migrate-btn");
+    if (migrateBtn) {
+      migrateBtn.addEventListener("click", async () => {
+        migrateBtn.disabled = true;
+        migrateBtn.textContent = "Adding…";
+        try {
+          await window.MG.migrateLocalToCloud(getLocalRecipes());
+          saveLocalRecipes([]);
+          render();
+        } catch (err) {
+          alert("Sorry, those recipes couldn't be added to your account: " + (err.message || err));
+          migrateBtn.disabled = false;
+          migrateBtn.textContent = "Add to my account";
+        }
+      });
+    }
+    const dismissBtn = document.getElementById("dismiss-migrate-btn");
+    if (dismissBtn) {
+      dismissBtn.addEventListener("click", () => { migrationDismissed = true; render(); });
+    }
+
+    const signOutBtn = document.getElementById("sign-out-btn");
+    signOutBtn.addEventListener("click", async () => {
+      signOutBtn.disabled = true;
+      try {
+        await window.MG.signOutUser();
+      } catch (err) {
+        alert("Sorry, something went wrong signing out: " + (err.message || err));
+        signOutBtn.disabled = false;
+      }
+    });
+    return;
+  }
+
+  const tabSignin = document.getElementById("tab-signin");
+  const tabSignup = document.getElementById("tab-signup");
+  tabSignin.addEventListener("click", () => { profileMode = "signin"; profileError = ""; render(); });
+  tabSignup.addEventListener("click", () => { profileMode = "signup"; profileError = ""; render(); });
+
+  const signinBtn = document.getElementById("signin-btn");
+  if (signinBtn) {
+    signinBtn.addEventListener("click", async () => {
+      const email = document.getElementById("signin-email").value.trim();
+      const password = document.getElementById("signin-password").value;
+      if (!email || !password) { profileError = "Please enter both an email and a password."; render(); return; }
+      signinBtn.disabled = true;
+      signinBtn.textContent = "Signing in…";
+      try {
+        await window.MG.signIn(email, password);
+        profileError = "";
+        // "mg-auth-changed" (fired by firebase-init.js) triggers the re-render.
+      } catch (err) {
+        profileError = err.message || "Sorry, something went wrong signing in.";
+        render();
+      }
+    });
+  }
+
+  const signupBtn = document.getElementById("signup-btn");
+  if (signupBtn) {
+    signupBtn.addEventListener("click", async () => {
+      const username = document.getElementById("signup-username").value.trim();
+      const email = document.getElementById("signup-email").value.trim();
+      const password = document.getElementById("signup-password").value;
+      if (!username || !email || !password) { profileError = "Please fill in a username, email, and password."; render(); return; }
+      signupBtn.disabled = true;
+      signupBtn.textContent = "Creating…";
+      try {
+        await window.MG.signUp(email, password, username);
+        profileError = "";
+      } catch (err) {
+        profileError = err.message || "Sorry, something went wrong creating your account.";
+        render();
+      }
+    });
+  }
+}
+
 // ---------- Stub views (Phase 2 / 3 features) ----------
 function renderStub(title, phaseNote) {
   return `
@@ -568,9 +787,9 @@ const routes = {
   "#/home": { render: renderHome },
   "#/recipes": { render: renderRecipesList },
   "#/recipe/new": { render: () => renderRecipeForm(null), wire: () => wireRecipeForm(null) },
-  "#/friends": { render: () => renderStub("Friends & Family", "it arrives in Phase 2, once accounts and cloud sync are in.") },
+  "#/friends": { render: () => renderStub("Friends & Family", "sharing recipes with friends and family is coming in a future update, now that accounts are in place.") },
   "#/settings": { render: () => renderStub("Settings", "unit system and theme are coming in a later phase — for now the app uses US customary units and light mode.") },
-  "#/profile": { render: () => renderStub("Profile", "sign-in and cross-device sync arrive in Phase 2. For now your recipes are saved to this device only.") },
+  "#/profile": { render: renderProfile, wire: wireProfile },
   "#/community": { render: () => renderStub("Community Recipes", "this arrives in Phase 3, alongside moderation and the premium tier.") },
   "#/substitutions": { render: () => renderStub("Substitution Tips", "this arrives in Phase 3, alongside moderation and the premium tier.") },
 };
@@ -630,6 +849,16 @@ function wireGlobalClicks() {
   const backBtn = document.getElementById("back-btn");
   if (backBtn) backBtn.addEventListener("click", () => { location.hash = "#/home"; });
 }
+
+// Re-render the current view when sign-in state changes or cloud recipes
+// update (e.g. a save from another device) — only for views whose content
+// actually depends on that data, so e.g. the Temperature Converter doesn't
+// needlessly reset mid-typing.
+function refreshIfRelevant(routeNames) {
+  if (routeNames.includes(currentRoute().name)) render();
+}
+window.addEventListener("mg-auth-changed", () => refreshIfRelevant(["#/profile", "#/recipes", "scale", "allergen"]));
+window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "scale", "allergen", "#/profile"]));
 
 window.addEventListener("hashchange", render);
 window.addEventListener("DOMContentLoaded", () => {
