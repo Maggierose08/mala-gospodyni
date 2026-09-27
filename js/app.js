@@ -736,19 +736,68 @@ function wireAllergenChecker(idPrefix, getIngredientNames) {
   });
 }
 
-function renderAllergen(id) {
-  const recipe = id ? getRecipe(id) : null;
-  let body = `
+// Split into two folders (same pattern as Recipes, Scale Converter, and
+// Temperature Converter): a quick one-ingredient-at-a-time substitution
+// lookup, and the fuller whole-recipe "measurement differences" checker
+// (typed in by hand only -- no photo scan here, since that belongs to the
+// full-recipe flow, not a single-ingredient lookup).
+function renderAllergenHome() {
+  return `
     ${pageHeader("Allergen Checker")}
+    <div class="home-grid">
+      <div class="home-box butter" data-route="#/allergen/check">${ICONS.leaf}<span>Check Your Own Ingredients</span></div>
+      <div class="home-box blush" data-route="#/allergen/measurements">${ICONS.swap}<span>Measurement Differences</span></div>
+    </div>
+  `;
+}
+
+// ---- Check Your Own Ingredients: type one ingredient, see substitutions ----
+function renderAllergenCheck() {
+  return `
+    ${pageHeader("Check Your Own Ingredients", "#/allergen")}
     <div class="card">
       <h2>Check your own ingredients</h2>
-      <p class="hint">Add ingredients by hand below, or scan a photo of a recipe you haven't saved yet — no need to save it first.</p>
-      ${renderScanControl("allergen-scan", "Scan a Photo Instead")}
-      <div id="allergen-scan-reminder" class="disclaimer" style="display:none;">
-        <strong>Please check this carefully:</strong> automatic scanning can misread handwriting, smudges, or unusual formatting.
-        Compare the ingredients below against your photo, and fix anything wrong — accuracy matters most here.
+      <p class="hint">Type an ingredient to see common allergy-friendly substitutions for it.</p>
+      <div class="field">
+        <label for="ingredient-check-input">Ingredient</label>
+        <input type="text" id="ingredient-check-input" placeholder="e.g. butter, soy sauce, almond flour">
       </div>
-      <label style="margin-top:12px;">Ingredients</label>
+      <div id="ingredient-check-results" class="allergen-results-box" style="margin-top:14px;"></div>
+      ${ALLERGEN_DISCLAIMER}
+    </div>
+  `;
+}
+
+function wireAllergenCheck() {
+  const input = document.getElementById("ingredient-check-input");
+  const results = document.getElementById("ingredient-check-results");
+  input.addEventListener("input", () => {
+    const name = input.value.trim();
+    if (!name) { results.innerHTML = ""; return; }
+    const matches = findIngredientSubstitutions(name);
+    if (!matches.length) {
+      results.innerHTML = '<p class="muted-msg">No common allergy substitutions found for that ingredient.</p>';
+      return;
+    }
+    results.innerHTML = matches.map((m) => `
+      <div class="match">
+        <span class="cat-tag">${m.label}</span>
+        <div style="margin-top:4px;">${m.suggestion}</div>
+      </div>`).join("");
+  });
+}
+
+// ---- Measurement Differences: a full ingredient list, typed in by hand,
+// checked against selected allergen categories (plus the saved-recipe
+// picker, same as Scale Converter's "Convert Your Own") ----
+function renderAllergenMeasurements(id) {
+  const recipe = id ? getRecipe(id) : null;
+  let body = `
+    ${pageHeader("Measurement Differences", "#/allergen")}
+    <div class="card">
+      <h2>Check your own ingredients</h2>
+      <p class="hint">Add your recipe's ingredients below to see substitution ratios for any allergens you select.</p>
+      <label>Ingredients</label>
       <div class="ing-header"><span>Qty</span><span>Unit</span><span>Ingredient</span><span></span></div>
       <div id="adhoc-allergen-ingredient-rows"></div>
       <button class="btn secondary" type="button" id="adhoc-allergen-add-ingredient-btn">+ Add Ingredient</button>
@@ -758,7 +807,7 @@ function renderAllergen(id) {
       ${ALLERGEN_DISCLAIMER}
     </div>
     <p class="section-label">Or use a saved recipe</p>
-    ${renderRecipePicker(id, "#/allergen/")}
+    ${renderRecipePicker(id, "#/allergen/measurements/")}
   `;
   if (recipe) {
     body += `
@@ -772,26 +821,15 @@ function renderAllergen(id) {
   return body;
 }
 
-function wireAllergen(id) {
-  // ---- Check your own ingredients (blank by default; scan to fill in) ----
+function wireAllergenMeasurements(id) {
+  // ---- Check your own ingredients (blank by default) ----
   const adhocRows = document.getElementById("adhoc-allergen-ingredient-rows");
-  const scanReminder = document.getElementById("allergen-scan-reminder");
 
   // Start with one blank editable row, like the New Recipe form.
   addIngredientRow(adhocRows, "", "", "");
 
   document.getElementById("adhoc-allergen-add-ingredient-btn").addEventListener("click", () => {
     addIngredientRow(adhocRows, "", "", "");
-  });
-
-  wireScanControl("allergen-scan", (parsed) => {
-    scanReminder.style.display = "block";
-    adhocRows.innerHTML = "";
-    if (parsed.ingredients.length) {
-      parsed.ingredients.forEach((i) => addIngredientRow(adhocRows, i.qty, i.unit, i.name));
-    } else {
-      addIngredientRow(adhocRows, "", "", "");
-    }
   });
 
   wireAllergenChecker("adhoc-allergen", () => readIngredientRows(adhocRows).map((i) => i.name));
@@ -1488,8 +1526,10 @@ function currentRoute() {
   if (hash === "#/scale/convert") return { name: "scale-convert", id: null };
   if (hash === "#/scale/popular") return { name: "scale-popular" };
   if (hash === "#/scale") return { name: "scale-home" };
-  if (hash.startsWith("#/allergen/")) return { name: "allergen", id: parts[2] };
-  if (hash === "#/allergen") return { name: "allergen", id: null };
+  if (hash.startsWith("#/allergen/measurements/")) return { name: "allergen-measurements", id: parts[3] };
+  if (hash === "#/allergen/measurements") return { name: "allergen-measurements", id: null };
+  if (hash === "#/allergen/check") return { name: "allergen-check" };
+  if (hash === "#/allergen") return { name: "allergen-home" };
   if (hash === "#/temp/oven") return { name: "temp-oven" };
   if (hash === "#/temp/quick-ref") return { name: "temp-quick-ref" };
   if (hash === "#/temp/convert") return { name: "temp-convert" };
@@ -1515,9 +1555,14 @@ function render() {
   } else if (route.name === "scale-convert") {
     view.innerHTML = renderScaleConvert(route.id);
     wireScaleConvert(route.id);
-  } else if (route.name === "allergen") {
-    view.innerHTML = renderAllergen(route.id);
-    wireAllergen(route.id);
+  } else if (route.name === "allergen-home") {
+    view.innerHTML = renderAllergenHome();
+  } else if (route.name === "allergen-check") {
+    view.innerHTML = renderAllergenCheck();
+    wireAllergenCheck();
+  } else if (route.name === "allergen-measurements") {
+    view.innerHTML = renderAllergenMeasurements(route.id);
+    wireAllergenMeasurements(route.id);
   } else if (route.name === "temp-home") {
     view.innerHTML = renderTempHome();
   } else if (route.name === "temp-oven") {
@@ -1578,9 +1623,9 @@ function updateProfileButton() {
 
 window.addEventListener("mg-auth-changed", () => {
   updateProfileButton();
-  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale-convert", "allergen"]);
+  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale-convert", "allergen-measurements"]);
 });
-window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "recipe-category", "scale-convert", "allergen", "#/profile"]));
+window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "recipe-category", "scale-convert", "allergen-measurements", "#/profile"]));
 
 window.addEventListener("hashchange", render);
 window.addEventListener("DOMContentLoaded", () => {

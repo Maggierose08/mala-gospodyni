@@ -166,7 +166,51 @@ async function main() {
   assert(/2 cup/.test(window.document.getElementById("adhoc-scale-output").textContent), "ad-hoc scale card scales a manually-entered ingredient (1 cup sugar, 2->4 servings = 2 cup), got: " + window.document.getElementById("adhoc-scale-output").textContent);
 
   // ---- Allergen Checker ----
-  go("#/allergen/" + recipeId);
+  // The Allergen Checker tab is now a folder grid (same pattern as Recipes,
+  // Scale Converter, and Temperature Converter): "Check Your Own
+  // Ingredients" (a quick one-ingredient-at-a-time substitution lookup) and
+  // "Measurement Differences" (the fuller whole-recipe checker) are
+  // separate pages.
+  go("#/allergen");
+  const allergenFolderBoxes = window.document.querySelectorAll("#view .home-box");
+  assert(allergenFolderBoxes.length === 2, "allergen checker shows 2 folders (Check Your Own Ingredients, Measurement Differences), got " + allergenFolderBoxes.length);
+  const allergenHomeText = window.document.getElementById("view").textContent;
+  assert(/Check Your Own Ingredients/.test(allergenHomeText), "allergen folder grid includes Check Your Own Ingredients");
+  assert(/Measurement Differences/.test(allergenHomeText), "allergen folder grid includes Measurement Differences");
+
+  // "Check Your Own Ingredients" — type one ingredient, substitutions
+  // appear below (no allergen checkboxes needed, unlike Measurement
+  // Differences — it looks up every category at once).
+  go("#/allergen/check");
+  const checkBackBtn = window.document.getElementById("back-btn");
+  assert(checkBackBtn.getAttribute("data-back-route") === "#/allergen", "Check Your Own Ingredients page's back button returns to the Allergen Checker folder grid");
+  const ingredientCheckInput = window.document.getElementById("ingredient-check-input");
+  ingredientCheckInput.value = "milk";
+  ingredientCheckInput.dispatchEvent(new window.Event("input"));
+  const ingredientCheckResults = window.document.getElementById("ingredient-check-results").textContent;
+  assert(/dairy/i.test(ingredientCheckResults) && /almond, oat, or soy milk/i.test(ingredientCheckResults), "typing 'milk' shows the dairy substitution suggestion, got: " + ingredientCheckResults);
+
+  ingredientCheckInput.value = "soy sauce";
+  ingredientCheckInput.dispatchEvent(new window.Event("input"));
+  const soySauceResults = window.document.getElementById("ingredient-check-results").textContent;
+  assert(/gluten/i.test(soySauceResults) && /soy/i.test(soySauceResults), "typing 'soy sauce' shows both its gluten and soy substitution suggestions, got: " + soySauceResults);
+
+  ingredientCheckInput.value = "carrot";
+  ingredientCheckInput.dispatchEvent(new window.Event("input"));
+  assert(/no common allergy substitutions/i.test(window.document.getElementById("ingredient-check-results").textContent), "typing an ingredient with no known allergen match shows an honest no-match message");
+
+  ingredientCheckInput.value = "";
+  ingredientCheckInput.dispatchEvent(new window.Event("input"));
+  assert(window.document.getElementById("ingredient-check-results").textContent === "", "clearing the ingredient field clears the results");
+
+  // "Measurement Differences" — the fuller whole-recipe checker, typed in
+  // by hand only (no photo scan here anymore) plus the saved-recipe picker.
+  go("#/allergen/measurements/" + recipeId);
+  const measurementsBackBtn = window.document.getElementById("back-btn");
+  assert(measurementsBackBtn.getAttribute("data-back-route") === "#/allergen", "Measurement Differences page's back button returns to the Allergen Checker folder grid");
+  assert(!window.document.getElementById("allergen-scan-input"), "Measurement Differences no longer shows a photo-scan control");
+  assert(/Or use a saved recipe/.test(window.document.body.textContent), "Measurement Differences labels the saved-recipe picker section");
+
   const glutenChk = Array.from(window.document.querySelectorAll(".saved-allergen-chk")).find((c) => c.value === "gluten");
   const eggChk = Array.from(window.document.querySelectorAll(".saved-allergen-chk")).find((c) => c.value === "egg");
   glutenChk.checked = true;
@@ -176,14 +220,8 @@ async function main() {
   assert(/flour/i.test(results) && /gluten-free/i.test(results), "allergen checker flags flour for gluten");
   assert(/eggs/i.test(results) && /flaxseed/i.test(results), "allergen checker flags eggs with flaxseed ratio");
 
-  // "Check your own ingredients" section (merged scan + manual entry) — same
-  // pre-populated-blank-row pattern as Scale Converter above.
-  assert(!!window.document.getElementById("allergen-scan-input"), "allergen checker shows its own scan control");
-  assert(window.document.getElementById("allergen-scan-reminder").style.display === "none", "scan-accuracy disclaimer stays hidden until a scan happens");
-  assert(/Check your own ingredients/.test(window.document.body.textContent), "allergen checker has a merged 'check your own ingredients' section");
-  assert(/Or use a saved recipe/.test(window.document.body.textContent), "allergen checker labels the saved-recipe picker section");
   const adhocAllergenRow = window.document.querySelector("#adhoc-allergen-ingredient-rows .ing-row");
-  assert(!!adhocAllergenRow, "check-your-own-ingredients section starts with one blank ingredient row");
+  assert(!!adhocAllergenRow, "measurement differences section starts with one blank ingredient row");
   adhocAllergenRow.querySelector(".ing-name").value = "milk";
   const adhocDairyChk = Array.from(window.document.querySelectorAll(".adhoc-allergen-allergen-chk")).find((c) => c.value === "dairy");
   adhocDairyChk.checked = true;

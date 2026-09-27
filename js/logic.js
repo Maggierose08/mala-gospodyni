@@ -188,6 +188,25 @@ function checkAllergens(ingredientNames, selectedCategories) {
   return results;
 }
 
+// Looks up substitution ideas for a single typed-in ingredient against
+// every allergen category at once (unlike checkAllergens, which only looks
+// at categories the user has pre-selected) -- e.g. "soy sauce" matches both
+// the gluten and soy entries. Used by the "Check Your Own Ingredients" tab,
+// which is a direct one-ingredient-in / substitutions-out lookup rather
+// than a whole-recipe check.
+function findIngredientSubstitutions(rawName) {
+  const name = (rawName || "").toLowerCase();
+  if (!name.trim()) return [];
+  const results = [];
+  for (const cat of Object.keys(ALLERGEN_MAP)) {
+    const def = ALLERGEN_MAP[cat];
+    if (def.keywords.some((k) => name.includes(k))) {
+      results.push({ category: cat, label: def.label, suggestion: def.suggestion });
+    }
+  }
+  return results;
+}
+
 function fmtNum(n) {
   if (n === null || n === undefined || isNaN(n)) return "?";
   const rounded = Math.round(n * 100) / 100;
@@ -806,7 +825,7 @@ function parseOcrText(rawText) {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, POPULAR_CONVERSIONS, OVEN_TYPES, ALLERGEN_MAP,
-    findDensity, convertUnit, scaleQty, fToC, cToF, altitudeAdjustment, checkAllergens, fmtNum,
+    findDensity, convertUnit, scaleQty, fToC, cToF, altitudeAdjustment, checkAllergens, findIngredientSubstitutions, fmtNum,
     parseOcrText,
     RECIPE_TEMPLATES, detectDietaryFilters, parseServingsFromRequest, matchRecipeTemplates, generateRecipe,
   };
