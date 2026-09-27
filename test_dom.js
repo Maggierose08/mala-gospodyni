@@ -273,6 +273,21 @@ async function main() {
   window.document.getElementById("forgot-password-btn").click(); // window.MG isn't loaded yet in this test
   assert(/still connecting/i.test(window.document.getElementById("reset-status").textContent), "forgot password before window.MG loads shows a friendly retry message, not a crash");
 
+  // Sign In and Create Account should show the same friendly message when
+  // clicked before window.MG has finished loading, instead of throwing
+  // "Cannot read properties of undefined" straight out of the click handler.
+  window.document.getElementById("signin-password").value = "testpassword123";
+  window.document.getElementById("signin-btn").click(); // window.MG isn't loaded yet in this test
+  assert(/still connecting/i.test(window.document.getElementById("view").textContent), "sign in before window.MG loads shows a friendly retry message, not a crash");
+
+  window.document.getElementById("tab-signup").click();
+  window.document.getElementById("signup-username").value = "testuser";
+  window.document.getElementById("signup-email").value = "test2@example.com";
+  window.document.getElementById("signup-password").value = "testpassword123";
+  window.document.getElementById("signup-btn").click(); // window.MG isn't loaded yet in this test
+  assert(/still connecting/i.test(window.document.getElementById("view").textContent), "create account before window.MG loads shows a friendly retry message, not a crash");
+  window.document.getElementById("tab-signin").click(); // leave it back on Sign In for a clean default next run
+
   // ---- Edit + delete recipe ----
   go("#/recipe/edit/" + recipeId);
   assert(window.document.getElementById("recipe-title").value === "Test Banana Bread", "edit form prefills existing title");

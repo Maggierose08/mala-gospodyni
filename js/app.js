@@ -1357,6 +1357,7 @@ function wireProfile() {
       const email = document.getElementById("signin-email").value.trim();
       const password = document.getElementById("signin-password").value;
       if (!email || !password) { profileError = "Please enter both an email and a password."; render(); return; }
+      if (!hasCloud()) { profileError = "Still connecting — please wait a moment and try again."; render(); return; }
       signinBtn.disabled = true;
       signinBtn.textContent = "Signing in…";
       try {
@@ -1396,6 +1397,7 @@ function wireProfile() {
       const email = document.getElementById("signup-email").value.trim();
       const password = document.getElementById("signup-password").value;
       if (!username || !email || !password) { profileError = "Please fill in a username, email, and password."; render(); return; }
+      if (!hasCloud()) { profileError = "Still connecting — please wait a moment and try again."; render(); return; }
       signupBtn.disabled = true;
       signupBtn.textContent = "Creating…";
       try {
