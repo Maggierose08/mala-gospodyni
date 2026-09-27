@@ -51,6 +51,8 @@ const db = initializeFirestore(app, { localCache: persistentLocalCache() });
 let currentUser = null; // { uid, email, username } | null
 let cloudRecipes = [];
 let recipesUnsubscribe = null;
+let cloudNotes = [];
+let notesUnsubscribe = null;
 let resolveReady;
 const ready = new Promise((resolve) => { resolveReady = resolve; });
 
@@ -60,6 +62,12 @@ function dispatch(name, detail) {
 
 function recipeDocRef(uid, recipeId) {
   return doc(db, "users", uid, "recipes", recipeId);
+}
+
+// A user's own private notes -- same shape/rules as their private recipes,
+// just a separate subcollection so the two lists never mix.
+function noteDocRef(uid, noteId) {
+  return doc(db, "users", uid, "notes", noteId);
 }
 
 // A shared/public copy of a recipe lives in its own top-level collection
@@ -87,9 +95,25 @@ function subscribeToRecipes(uid) {
   );
 }
 
+function subscribeToNotes(uid) {
+  if (notesUnsubscribe) notesUnsubscribe();
+  notesUnsubscribe = onSnapshot(
+    collection(db, "users", uid, "notes"),
+    (snap) => {
+      cloudNotes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      dispatch("mg-notes-changed", { notes: cloudNotes });
+    },
+    (err) => {
+      console.error("Notes sync error", err);
+    }
+  );
+}
+
 onAuthStateChanged(auth, async (user) => {
   if (recipesUnsubscribe) { recipesUnsubscribe(); recipesUnsubscribe = null; }
+  if (notesUnsubscribe) { notesUnsubscribe(); notesUnsubscribe = null; }
   cloudRecipes = [];
+  cloudNotes = [];
 
   if (user) {
     let username = user.displayName || "";
@@ -121,6 +145,7 @@ onAuthStateChanged(auth, async (user) => {
     }
     currentUser = { uid: user.uid, email: user.email, username, contactInfo, avatar, isAdmin, hasFreeAccess };
     subscribeToRecipes(user.uid);
+    subscribeToNotes(user.uid);
   } else {
     currentUser = null;
   }
@@ -173,6 +198,7 @@ window.MG = {
   ready,
   getCurrentUser: () => currentUser,
   getCloudRecipes: () => cloudRecipes,
+  getCloudNotes: () => cloudNotes,
   isAdmin: () => !!(currentUser && currentUser.isAdmin),
   hasFreeAccess: () => !!(currentUser && currentUser.hasFreeAccess),
 
@@ -318,6 +344,20 @@ window.MG = {
         updatedAt: serverTimestamp(),
       });
     }
+  },
+
+  upsertNote: async (note) => {
+    if (!currentUser) throw new Error("Not signed in.");
+    await setDoc(noteDocRef(currentUser.uid, note.id), {
+      title: note.title || "",
+      body: note.body || "",
+      updatedAt: serverTimestamp(),
+    });
+  },
+
+  deleteNoteCloud: async (noteId) => {
+    if (!currentUser) throw new Error("Not signed in.");
+    await deleteDoc(noteDocRef(currentUser.uid, noteId));
   },
 
   // ---- Community Recipes: a public, shared pool anyone can browse ----

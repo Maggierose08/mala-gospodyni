@@ -22,6 +22,7 @@ const ICONS = {
   skewer: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 20 4"/><circle cx="9" cy="15" r="2"/><circle cx="13" cy="11" r="2"/><circle cx="17" cy="7" r="2"/></svg>`,
   folder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>`,
   mountain: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19 9.5 6l4 6.5L16 9l5 10Z"/><path d="M13.2 11.3 11 15h6.5"/></svg>`,
+  note: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>`,
 };
 
 // Recipes are organized into these folders (plus an "uncategorized" bucket
@@ -99,6 +100,51 @@ function deleteRecipe(id) {
     });
   }
   saveLocalRecipes(getLocalRecipes().filter((r) => r.id !== id));
+  return Promise.resolve();
+}
+
+// ---------- Storage: Notes ----------
+// Same local-vs-cloud split as recipes above: signed out, notes live in
+// this browser's localStorage; signed in, they live in Firestore and sync
+// across every device, kept fresh here by the "mg-notes-changed" event.
+const NOTES_STORAGE_KEY = "mg_notes_v1";
+
+function getLocalNotes() {
+  try {
+    const raw = localStorage.getItem(NOTES_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.error("Could not read saved notes", e);
+    return [];
+  }
+}
+
+function saveLocalNotes(list) {
+  localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(list));
+}
+
+function getNotes() {
+  if (isSignedIn()) return window.MG.getCloudNotes();
+  return getLocalNotes();
+}
+
+function getNote(id) {
+  return getNotes().find((n) => n.id === id) || null;
+}
+
+function upsertNote(note) {
+  if (isSignedIn()) return window.MG.upsertNote(note);
+  const list = getLocalNotes();
+  const idx = list.findIndex((n) => n.id === note.id);
+  if (idx >= 0) list[idx] = note;
+  else list.push(note);
+  saveLocalNotes(list);
+  return Promise.resolve();
+}
+
+function deleteNote(id) {
+  if (isSignedIn()) return window.MG.deleteNoteCloud(id);
+  saveLocalNotes(getLocalNotes().filter((n) => n.id !== id));
   return Promise.resolve();
 }
 
@@ -222,6 +268,7 @@ function renderHome() {
       <div class="home-box butter" data-route="#/allergen">${ICONS.leaf}<span>Allergen Checker</span></div>
       <div class="home-box" data-route="#/temp">${ICONS.thermo}<span>Temperature Converter</span></div>
       <div class="home-box blush" data-route="#/create">${ICONS.wand}<span>Recipe Creator</span></div>
+      <div class="home-box butter" data-route="#/notes">${ICONS.note}<span>Notes</span></div>
     </div>
     <div class="quick-links">
       <div class="quick-link" data-route="#/community">${ICONS.book} Community Recipes</div>
@@ -511,6 +558,101 @@ function wireRecipeForm(id) {
         } catch (err) {
           console.error("Could not delete recipe", err);
           alert("Sorry, that recipe couldn't be deleted: " + (err.message || err));
+        }
+      }
+    });
+  }
+}
+
+// ---------- View: Notes ----------
+// A simple, personal scratchpad — no folders, no ingredients, nothing
+// shared with anyone. Same list-and-form shape as Recipes, just simpler.
+function renderNotesList() {
+  const notes = getNotes();
+  const syncNote = isSignedIn()
+    ? `<p class="hint">☁ Synced to your account — these notes follow you to any device you sign into.</p>`
+    : `<p class="hint">💾 Saved on this device only. <a href="#/profile">Sign in</a> to sync notes across your phone and computer.</p>`;
+  const rows = notes.length
+    ? notes.map((n) => {
+        const preview = (n.body || "").trim();
+        return `
+          <div class="recipe-card" data-open-note="${n.id}">
+            <div>
+              <div class="rc-title">${escapeHtml(n.title || "(untitled note)")}</div>
+              <div class="rc-meta">${escapeHtml(preview.slice(0, 60))}${preview.length > 60 ? "…" : ""}</div>
+            </div>
+            <span>›</span>
+          </div>`;
+      }).join("")
+    : `<p class="muted-msg">No notes yet — add your first one below.</p>`;
+
+  return `
+    ${pageHeader("Notes")}
+    ${syncNote}
+    ${rows}
+    <div class="recipe-actions">
+      <button class="btn" id="new-note-btn">+ New Note</button>
+    </div>
+  `;
+}
+
+function renderNoteForm(id) {
+  const existing = id ? getNote(id) : null;
+  const title = existing ? "Edit Note" : "New Note";
+  return `
+    ${pageHeader(title, "#/notes")}
+    <div class="card">
+      <div class="field" style="margin-bottom:14px;">
+        <label for="note-title">Title</label>
+        <input type="text" id="note-title" placeholder="e.g. Substitutions I like" value="${existing ? escapeHtml(existing.title || "") : ""}">
+      </div>
+      <div class="field">
+        <label for="note-body">Note</label>
+        <textarea id="note-body" placeholder="Write anything you want to remember…" style="min-height:180px;">${existing ? escapeHtml(existing.body || "") : ""}</textarea>
+      </div>
+      <div class="recipe-actions">
+        <button class="btn" id="save-note-btn">Save Note</button>
+        ${existing ? `<button class="btn danger" id="delete-note-btn">Delete</button>` : ""}
+      </div>
+    </div>
+  `;
+}
+
+function wireNoteForm(id) {
+  const existing = id ? getNote(id) : null;
+
+  const saveBtn = document.getElementById("save-note-btn");
+  saveBtn.addEventListener("click", async () => {
+    const title = document.getElementById("note-title").value.trim();
+    const body = document.getElementById("note-body").value;
+    if (!title && !body.trim()) { alert("Please write something before saving."); return; }
+    const note = {
+      id: existing ? existing.id : newId(),
+      title, body,
+    };
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving…";
+    try {
+      await upsertNote(note);
+      location.hash = "#/notes";
+    } catch (err) {
+      console.error("Could not save note", err);
+      alert("Sorry, that note couldn't be saved: " + (err.message || err));
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save Note";
+    }
+  });
+
+  const deleteBtn = document.getElementById("delete-note-btn");
+  if (deleteBtn) {
+    deleteBtn.addEventListener("click", async () => {
+      if (confirm("Delete this note? This can't be undone.")) {
+        try {
+          await deleteNote(existing.id);
+          location.hash = "#/notes";
+        } catch (err) {
+          console.error("Could not delete note", err);
+          alert("Sorry, that note couldn't be deleted: " + (err.message || err));
         }
       }
     });
@@ -1820,6 +1962,8 @@ const routes = {
   "#/home": { render: renderHome },
   "#/recipes": { render: renderRecipesList },
   "#/recipe/new": { render: () => renderRecipeForm(null), wire: () => wireRecipeForm(null) },
+  "#/notes": { render: renderNotesList },
+  "#/notes/new": { render: () => renderNoteForm(null), wire: () => wireNoteForm(null) },
   "#/friends": { render: () => renderStub("Friends & Family", "sharing recipes with friends and family is coming in a future update, now that accounts are in place.") },
   "#/settings": { render: () => renderStub("Settings", "unit system and theme are coming in a later phase — for now the app uses US customary units and light mode.") },
   "#/profile": { render: renderProfile, wire: wireProfile },
@@ -1830,6 +1974,7 @@ function currentRoute() {
   const hash = location.hash || "#/home";
   const parts = hash.split("/");
   if (hash.startsWith("#/recipe/edit/")) return { name: "edit-recipe", id: parts[3] };
+  if (hash.startsWith("#/notes/edit/")) return { name: "edit-note", id: parts[3] };
   if (hash.startsWith("#/recipes/")) return { name: "recipe-category", category: parts[2] };
   if (hash.startsWith("#/scale/convert/")) return { name: "scale-convert", id: parts[3] };
   if (hash === "#/scale/convert") return { name: "scale-convert", id: null };
@@ -1861,6 +2006,9 @@ function render() {
   if (route.name === "edit-recipe") {
     view.innerHTML = renderRecipeForm(route.id);
     wireRecipeForm(route.id);
+  } else if (route.name === "edit-note") {
+    view.innerHTML = renderNoteForm(route.id);
+    wireNoteForm(route.id);
   } else if (route.name === "recipe-category") {
     view.innerHTML = renderRecipeCategory(route.category);
   } else if (route.name === "scale-home") {
@@ -1922,6 +2070,9 @@ function wireGlobalClicks() {
   document.querySelectorAll("[data-open-recipe]").forEach((n) => {
     n.addEventListener("click", () => { location.hash = "#/recipe/edit/" + n.getAttribute("data-open-recipe"); });
   });
+  document.querySelectorAll("[data-open-note]").forEach((n) => {
+    n.addEventListener("click", () => { location.hash = "#/notes/edit/" + n.getAttribute("data-open-note"); });
+  });
   document.querySelectorAll("[data-pick-recipe]").forEach((n) => {
     n.addEventListener("click", () => {
       location.hash = n.getAttribute("data-route-prefix") + n.getAttribute("data-pick-recipe");
@@ -1929,6 +2080,8 @@ function wireGlobalClicks() {
   });
   const newBtn = document.getElementById("new-recipe-btn");
   if (newBtn) newBtn.addEventListener("click", () => { location.hash = "#/recipe/new"; });
+  const newNoteBtn = document.getElementById("new-note-btn");
+  if (newNoteBtn) newNoteBtn.addEventListener("click", () => { location.hash = "#/notes/new"; });
   const backBtn = document.getElementById("back-btn");
   if (backBtn) backBtn.addEventListener("click", () => { location.hash = backBtn.getAttribute("data-back-route") || "#/home"; });
 }
@@ -1953,9 +2106,10 @@ function updateProfileButton() {
 
 window.addEventListener("mg-auth-changed", () => {
   updateProfileButton();
-  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale-convert", "allergen-measurements"]);
+  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale-convert", "allergen-measurements", "#/notes", "edit-note"]);
 });
 window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "recipe-category", "scale-convert", "allergen-measurements", "#/profile"]));
+window.addEventListener("mg-notes-changed", () => refreshIfRelevant(["#/notes", "edit-note"]));
 
 window.addEventListener("hashchange", render);
 window.addEventListener("DOMContentLoaded", () => {

@@ -40,7 +40,7 @@ async function main() {
   // ---- Home screen ----
   go("#/home");
   const homeBoxes = window.document.querySelectorAll(".home-box");
-  assert(homeBoxes.length === 5, "home screen shows 5 boxes, got " + homeBoxes.length);
+  assert(homeBoxes.length === 6, "home screen shows 6 boxes, got " + homeBoxes.length);
   assert(window.document.querySelectorAll(".quick-link").length === 2, "home screen shows 2 quick links");
 
   // ---- Recipes list (empty) ----
@@ -393,6 +393,45 @@ async function main() {
   stillThere = JSON.parse(window.localStorage.getItem("mg_recipes_v1"));
   assert(!stillThere.some((r) => r.id === recipeId), "delete with confirmation removes the recipe");
 
+  // ---- Notes (local, signed out) ----
+  go("#/notes");
+  assert(/No notes yet/.test(window.document.getElementById("view").textContent), "empty notes list shows message");
+  assert(/Sign in.*sync/i.test(window.document.getElementById("view").textContent), "notes list shows local-only sync hint when signed out");
+
+  go("#/notes/new");
+  window.document.getElementById("note-title").value = "Grocery reminders";
+  window.document.getElementById("note-body").value = "Buy extra butter for the holidays, and check the spice drawer for cinnamon.";
+  window.document.getElementById("save-note-btn").click();
+  await flush();
+  const savedNotes = JSON.parse(window.localStorage.getItem("mg_notes_v1"));
+  assert(Array.isArray(savedNotes) && savedNotes.length === 1, "note persisted to localStorage");
+  assert(savedNotes[0].title === "Grocery reminders", "saved note keeps its title");
+  const noteId = savedNotes[0].id;
+
+  go("#/notes");
+  assert(/Grocery reminders/.test(window.document.getElementById("view").textContent), "notes list shows the saved note's title");
+  assert(/Buy extra butter/.test(window.document.getElementById("view").textContent), "notes list shows a preview of the note's body");
+
+  go("#/notes/edit/" + noteId);
+  assert(window.document.getElementById("note-title").value === "Grocery reminders", "edit form prefills existing title");
+  assert(/Buy extra butter/.test(window.document.getElementById("note-body").value), "edit form prefills existing body");
+
+  // The earlier recipe-delete test left window.confirm monkey-patched to
+  // always return true, so explicitly reset it here rather than relying on
+  // jsdom's own (unpatched) default of false.
+  window.confirm = () => false;
+  window.document.getElementById("delete-note-btn").click();
+  await flush();
+  let stillThereNotes = JSON.parse(window.localStorage.getItem("mg_notes_v1"));
+  assert(stillThereNotes.some((n) => n.id === noteId), "delete without confirmation leaves note intact");
+
+  window.confirm = () => true;
+  window.document.getElementById("delete-note-btn").click();
+  await flush();
+  stillThereNotes = JSON.parse(window.localStorage.getItem("mg_notes_v1"));
+  assert(!stillThereNotes.some((n) => n.id === noteId), "delete with confirmation removes the note");
+  window.confirm = () => false; // restore jsdom's default for later tests
+
   // ---- Stub pages don't crash ----
   ["#/friends", "#/settings"].forEach((h) => {
     go(h);
@@ -471,6 +510,7 @@ async function main() {
   // copy, and reporting — all via a mocked window.MG, since real Firebase
   // can't run inside jsdom ----
   let mockCloudRecipes = [];
+  let mockCloudNotes = [];
   let communityPool = [
     { id: "friend1_abc", title: "Golabki", servings: 6, ingredients: [{ qty: 1, unit: "lb", name: "ground beef" }], steps: "Roll and bake.", category: "main", authorUid: "friend1", authorUsername: "babcia_anna", sourceRecipeId: "abc" },
     { id: "friend2_xyz", title: "Fruit Salad", servings: 4, ingredients: [{ qty: 2, unit: "cup", name: "mixed fruit" }], steps: "Mix.", category: "", authorUid: "friend2", authorUsername: "ciocia_ewa", sourceRecipeId: "xyz" },
@@ -498,6 +538,12 @@ async function main() {
     fetchCommunityRecipes: async () => communityPool.slice(),
     reportCommunityRecipe: async (id, reason) => { reportLog.push({ id, reason }); },
     migrateLocalToCloud: async () => {},
+    getCloudNotes: () => mockCloudNotes,
+    upsertNote: async (n) => {
+      const idx = mockCloudNotes.findIndex((x) => x.id === n.id);
+      if (idx >= 0) mockCloudNotes[idx] = n; else mockCloudNotes.push(n);
+    },
+    deleteNoteCloud: async (id) => { mockCloudNotes = mockCloudNotes.filter((n) => n.id !== id); },
   };
 
   // New recipe form shows the Share checkbox once signed in.
@@ -584,6 +630,26 @@ async function main() {
   await flush();
   assert(reportLog.some((r) => r.id === communityId && r.reason === "wrong ingredients"), "submitting a report calls window.MG.reportCommunityRecipe with the reason");
   assert(/reported/i.test(window.document.getElementById("report-box").textContent), "report box shows a thank-you confirmation after submitting");
+
+  // ---- Notes (signed in, cloud sync via mocked window.MG) ----
+  go("#/notes");
+  assert(/Synced to your account/.test(window.document.getElementById("view").textContent), "notes list shows the cloud-synced hint once signed in");
+
+  go("#/notes/new");
+  window.document.getElementById("note-title").value = "Cloud Note";
+  window.document.getElementById("note-body").value = "This one syncs across devices.";
+  window.document.getElementById("save-note-btn").click();
+  await flush();
+  assert(mockCloudNotes.some((n) => n.title === "Cloud Note"), "saving a signed-in note calls window.MG.upsertNote");
+  const cloudNoteId = mockCloudNotes.find((n) => n.title === "Cloud Note").id;
+
+  go("#/notes/edit/" + cloudNoteId);
+  assert(window.document.getElementById("note-title").value === "Cloud Note", "edit form prefills the cloud note's title");
+  window.confirm = () => true;
+  window.document.getElementById("delete-note-btn").click();
+  await flush();
+  assert(!mockCloudNotes.some((n) => n.id === cloudNoteId), "deleting a signed-in note calls window.MG.deleteNoteCloud");
+  window.confirm = () => false;
 
   // ---- Profile (signed in, admin) — mocked window.MG with isAdmin:true ----
   const grants = [{ uid: "u2", grantedTo: "janes_kitchen", granted: true }];
