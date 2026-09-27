@@ -21,6 +21,7 @@ const ICONS = {
   bowl: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18a9 9 0 0 1-18 0Z"/><path d="M12 11V8M8.5 11l-1-2.5M15.5 11l1-2.5"/></svg>`,
   skewer: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 20 4"/><circle cx="9" cy="15" r="2"/><circle cx="13" cy="11" r="2"/><circle cx="17" cy="7" r="2"/></svg>`,
   folder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>`,
+  mountain: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19 9.5 6l4 6.5L16 9l5 10Z"/><path d="M13.2 11.3 11 15h6.5"/></svg>`,
 };
 
 // Recipes are organized into these folders (plus an "uncategorized" bucket
@@ -802,6 +803,24 @@ function wireAllergen(id) {
 }
 
 // ---------- View: Temperature Converter ----------
+// Split into four folders (same pattern as Recipes and Scale Converter):
+// oven type, a static quick-reference table, a free-form F<->C converter,
+// and altitude adjustment. The old single page also showed a "for your
+// oven type, try around X°F instead" note inline with the converter --
+// since oven type now lives on its own page, that quick-check moved there
+// too (it's fundamentally an oven-type feature) rather than being dropped.
+function renderTempHome() {
+  return `
+    ${pageHeader("Temperature Converter")}
+    <div class="home-grid">
+      <div class="home-box butter" data-route="#/temp/oven">${ICONS.thermo}<span>Oven Type</span></div>
+      <div class="home-box blush" data-route="#/temp/quick-ref">${ICONS.book}<span>Quick Reference</span></div>
+      <div class="home-box" data-route="#/temp/convert">${ICONS.swap}<span>Convert Any Temperature</span></div>
+      <div class="home-box blush" data-route="#/temp/altitude">${ICONS.mountain}<span>Altitude Adjustment</span></div>
+    </div>
+  `;
+}
+
 function renderOvenTypeCard() {
   return `
     <div class="card">
@@ -816,6 +835,11 @@ function renderOvenTypeCard() {
         </div>
       </div>
       <div id="oven-type-info"></div>
+      <label for="oven-check-f" style="margin-top:14px;">Got a recipe temperature? Check the adjustment for your oven</label>
+      <div class="temp-widget" style="margin-bottom:0;">
+        <div class="temp-field"><input type="number" id="oven-check-f" step="any" placeholder="350"><label for="oven-check-f" style="margin:0;">°F</label></div>
+      </div>
+      <p id="oven-check-result" class="hint" style="margin-top:8px;"></p>
     </div>
   `;
 }
@@ -831,10 +855,41 @@ function renderOvenTypeInfo(key) {
   `;
 }
 
-function renderTemp() {
+function renderTempOven() {
   return `
-    ${pageHeader("Temperature Converter")}
+    ${pageHeader("Oven Type", "#/temp")}
     ${renderOvenTypeCard()}
+  `;
+}
+
+function wireTempOven() {
+  const ovenSelect = document.getElementById("oven-type-select");
+  const ovenInfo = document.getElementById("oven-type-info");
+  const checkF = document.getElementById("oven-check-f");
+  const checkResult = document.getElementById("oven-check-result");
+
+  function updateCheckResult() {
+    const info = OVEN_TYPES[ovenSelect.value];
+    const f = parseFloat(checkF.value);
+    if (!info || !info.offsetF || checkF.value === "" || isNaN(f)) {
+      checkResult.textContent = "";
+      return;
+    }
+    const adjustedF = f + info.offsetF;
+    checkResult.textContent = `For a ${info.label.toLowerCase()} oven, try around ${fmtNum(adjustedF)}°F (${fmtNum(fToC(adjustedF))}°C) instead, and check a few minutes early.`;
+  }
+
+  ovenSelect.addEventListener("change", () => {
+    ovenInfo.innerHTML = renderOvenTypeInfo(ovenSelect.value);
+    updateCheckResult();
+  });
+  ovenInfo.innerHTML = renderOvenTypeInfo(ovenSelect.value);
+  checkF.addEventListener("input", updateCheckResult);
+}
+
+function renderTempQuickRef() {
+  return `
+    ${pageHeader("Quick Reference", "#/temp")}
     <div class="card">
       <h2>Quick reference</h2>
       <table class="temp-ref-table">
@@ -842,6 +897,12 @@ function renderTemp() {
         ${OVEN_TEMP_QUICK_REF.map((r) => `<tr><td>${r.f}°F</td><td>${r.c}°C</td></tr>`).join("")}
       </table>
     </div>
+  `;
+}
+
+function renderTempConvert() {
+  return `
+    ${pageHeader("Convert Any Temperature", "#/temp")}
     <div class="card">
       <h2>Convert any temperature</h2>
       <div class="temp-widget">
@@ -849,8 +910,28 @@ function renderTemp() {
         <span>=</span>
         <div class="temp-field"><input type="number" id="temp-c" step="any" placeholder="177"><label for="temp-c" style="margin:0;">°C</label></div>
       </div>
-      <p id="temp-oven-adjust" class="hint" style="margin-top:8px;"></p>
     </div>
+  `;
+}
+
+function wireTempConvert() {
+  const tempF = document.getElementById("temp-f");
+  const tempC = document.getElementById("temp-c");
+  tempF.addEventListener("input", () => {
+    if (tempF.value === "") { tempC.value = ""; return; }
+    const f = parseFloat(tempF.value);
+    if (!isNaN(f)) tempC.value = fmtNum(fToC(f));
+  });
+  tempC.addEventListener("input", () => {
+    if (tempC.value === "") { tempF.value = ""; return; }
+    const c = parseFloat(tempC.value);
+    if (!isNaN(c)) tempF.value = fmtNum(cToF(c));
+  });
+}
+
+function renderTempAltitude() {
+  return `
+    ${pageHeader("Altitude Adjustment", "#/temp")}
     <div class="card">
       <h2>Altitude adjustment</h2>
       <p class="hint">Rule-of-thumb guidance only — the right adjustment depends on the specific recipe.</p>
@@ -865,43 +946,7 @@ function renderTemp() {
   `;
 }
 
-function wireTemp() {
-  const ovenSelect = document.getElementById("oven-type-select");
-  const ovenInfo = document.getElementById("oven-type-info");
-  const tempF = document.getElementById("temp-f");
-  const tempC = document.getElementById("temp-c");
-  const ovenAdjust = document.getElementById("temp-oven-adjust");
-
-  function updateOvenAdjustNote() {
-    const info = OVEN_TYPES[ovenSelect.value];
-    const f = parseFloat(tempF.value);
-    if (!info || !info.offsetF || tempF.value === "" || isNaN(f)) {
-      ovenAdjust.textContent = "";
-      return;
-    }
-    const adjustedF = f + info.offsetF;
-    ovenAdjust.textContent = `For a ${info.label.toLowerCase()} oven, try around ${fmtNum(adjustedF)}°F (${fmtNum(fToC(adjustedF))}°C) instead, and check a few minutes early.`;
-  }
-
-  ovenSelect.addEventListener("change", () => {
-    ovenInfo.innerHTML = renderOvenTypeInfo(ovenSelect.value);
-    updateOvenAdjustNote();
-  });
-  ovenInfo.innerHTML = renderOvenTypeInfo(ovenSelect.value);
-
-  tempF.addEventListener("input", () => {
-    if (tempF.value === "") { tempC.value = ""; ovenAdjust.textContent = ""; return; }
-    const f = parseFloat(tempF.value);
-    if (!isNaN(f)) tempC.value = fmtNum(fToC(f));
-    updateOvenAdjustNote();
-  });
-  tempC.addEventListener("input", () => {
-    if (tempC.value === "") { tempF.value = ""; ovenAdjust.textContent = ""; return; }
-    const c = parseFloat(tempC.value);
-    if (!isNaN(c)) tempF.value = fmtNum(cToF(c));
-    updateOvenAdjustNote();
-  });
-
+function wireTempAltitude() {
   const elevationInput = document.getElementById("elevation-ft");
   const altResult = document.getElementById("altitude-result");
   elevationInput.addEventListener("input", () => {
@@ -1445,7 +1490,11 @@ function currentRoute() {
   if (hash === "#/scale") return { name: "scale-home" };
   if (hash.startsWith("#/allergen/")) return { name: "allergen", id: parts[2] };
   if (hash === "#/allergen") return { name: "allergen", id: null };
-  if (hash === "#/temp") return { name: "temp" };
+  if (hash === "#/temp/oven") return { name: "temp-oven" };
+  if (hash === "#/temp/quick-ref") return { name: "temp-quick-ref" };
+  if (hash === "#/temp/convert") return { name: "temp-convert" };
+  if (hash === "#/temp/altitude") return { name: "temp-altitude" };
+  if (hash === "#/temp") return { name: "temp-home" };
   if (routes[hash]) return { name: hash };
   return { name: "#/home" };
 }
@@ -1469,9 +1518,19 @@ function render() {
   } else if (route.name === "allergen") {
     view.innerHTML = renderAllergen(route.id);
     wireAllergen(route.id);
-  } else if (route.name === "temp") {
-    view.innerHTML = renderTemp();
-    wireTemp();
+  } else if (route.name === "temp-home") {
+    view.innerHTML = renderTempHome();
+  } else if (route.name === "temp-oven") {
+    view.innerHTML = renderTempOven();
+    wireTempOven();
+  } else if (route.name === "temp-quick-ref") {
+    view.innerHTML = renderTempQuickRef();
+  } else if (route.name === "temp-convert") {
+    view.innerHTML = renderTempConvert();
+    wireTempConvert();
+  } else if (route.name === "temp-altitude") {
+    view.innerHTML = renderTempAltitude();
+    wireTempAltitude();
   } else {
     const r = routes[route.name] || routes["#/home"];
     view.innerHTML = r.render();

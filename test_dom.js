@@ -192,29 +192,63 @@ async function main() {
   assert(/milk/i.test(adhocResults) && /dairy/i.test(adhocResults), "ad-hoc allergen card flags a manually-entered ingredient, got: " + adhocResults);
 
   // ---- Temperature Converter ----
+  // The Temperature Converter tab is now a folder grid (same pattern as
+  // Recipes and Scale Converter): Oven Type, Quick Reference, Convert Any
+  // Temperature, and Altitude Adjustment are separate pages.
   go("#/temp");
+  const tempFolderBoxes = window.document.querySelectorAll("#view .home-box");
+  assert(tempFolderBoxes.length === 4, "temperature converter shows 4 folders, got " + tempFolderBoxes.length);
+  const tempHomeText = window.document.getElementById("view").textContent;
+  assert(/Oven Type/.test(tempHomeText), "temp folder grid includes Oven Type");
+  assert(/Quick Reference/.test(tempHomeText), "temp folder grid includes Quick Reference");
+  assert(/Convert Any Temperature/.test(tempHomeText), "temp folder grid includes Convert Any Temperature");
+  assert(/Altitude Adjustment/.test(tempHomeText), "temp folder grid includes Altitude Adjustment");
+
+  // Oven type — the "check a temperature for your oven" note now lives
+  // here (moved off the Convert Any Temperature page along with the rest
+  // of the oven-type feature).
+  go("#/temp/oven");
+  const ovenBackBtn = window.document.getElementById("back-btn");
+  assert(ovenBackBtn.getAttribute("data-back-route") === "#/temp", "Oven Type page's back button returns to the Temperature Converter folder grid");
+
+  const ovenSelect = window.document.getElementById("oven-type-select");
+  assert(ovenSelect.value === "electric", "oven type defaults to electric");
+  assert(/no adjustment is usually needed/i.test(window.document.getElementById("oven-type-info").textContent), "electric oven info shows the no-adjustment-needed summary");
+
+  const ovenCheckF = window.document.getElementById("oven-check-f");
+  ovenCheckF.value = "350";
+  ovenCheckF.dispatchEvent(new window.Event("input"));
+  assert(window.document.getElementById("oven-check-result").textContent === "", "no oven-adjustment note shown for the default electric oven");
+
+  ovenSelect.value = "gas";
+  ovenSelect.dispatchEvent(new window.Event("change"));
+  assert(/hot spots/i.test(window.document.getElementById("oven-type-info").textContent), "gas oven info mentions hot spots");
+  assert(window.document.getElementById("oven-check-result").textContent === "", "no numeric oven-adjustment note shown for gas (no agreed-on offset)");
+
+  ovenSelect.value = "convection";
+  ovenSelect.dispatchEvent(new window.Event("change"));
+  assert(/25.F/.test(window.document.getElementById("oven-type-info").textContent), "convection oven info mentions the 25°F rule of thumb");
+  assert(/325.F/.test(window.document.getElementById("oven-check-result").textContent), "convection adjustment note suggests 325°F for a 350°F recipe, got: " + window.document.getElementById("oven-check-result").textContent);
+
+  // Quick reference
+  go("#/temp/quick-ref");
+  const quickRefBackBtn = window.document.getElementById("back-btn");
+  assert(quickRefBackBtn.getAttribute("data-back-route") === "#/temp", "Quick Reference page's back button returns to the Temperature Converter folder grid");
   assert(window.document.querySelectorAll(".temp-ref-table tr").length === 12, "temp quick-reference table has header + 11 rows");
+
+  // Convert any temperature
+  go("#/temp/convert");
+  const convertTempBackBtn = window.document.getElementById("back-btn");
+  assert(convertTempBackBtn.getAttribute("data-back-route") === "#/temp", "Convert Any Temperature page's back button returns to the Temperature Converter folder grid");
   const tempF = window.document.getElementById("temp-f");
   tempF.value = "350";
   tempF.dispatchEvent(new window.Event("input"));
   assert(window.document.getElementById("temp-c").value === "176.67", "350F converts to 176.67C, got " + window.document.getElementById("temp-c").value);
 
-  // Oven type selector
-  const ovenSelect = window.document.getElementById("oven-type-select");
-  assert(ovenSelect.value === "electric", "oven type defaults to electric");
-  assert(/no adjustment is usually needed/i.test(window.document.getElementById("oven-type-info").textContent), "electric oven info shows the no-adjustment-needed summary");
-  assert(window.document.getElementById("temp-oven-adjust").textContent === "", "no oven-adjustment note shown for the default electric oven");
-
-  ovenSelect.value = "gas";
-  ovenSelect.dispatchEvent(new window.Event("change"));
-  assert(/hot spots/i.test(window.document.getElementById("oven-type-info").textContent), "gas oven info mentions hot spots");
-  assert(window.document.getElementById("temp-oven-adjust").textContent === "", "no numeric oven-adjustment note shown for gas (no agreed-on offset)");
-
-  ovenSelect.value = "convection";
-  ovenSelect.dispatchEvent(new window.Event("change"));
-  assert(/25.F/.test(window.document.getElementById("oven-type-info").textContent), "convection oven info mentions the 25°F rule of thumb");
-  assert(/325.F/.test(window.document.getElementById("temp-oven-adjust").textContent), "convection adjustment note suggests 325°F for a 350°F recipe, got: " + window.document.getElementById("temp-oven-adjust").textContent);
-
+  // Altitude adjustment
+  go("#/temp/altitude");
+  const altitudeBackBtn = window.document.getElementById("back-btn");
+  assert(altitudeBackBtn.getAttribute("data-back-route") === "#/temp", "Altitude Adjustment page's back button returns to the Temperature Converter folder grid");
   const elevInput = window.document.getElementById("elevation-ft");
   elevInput.value = "6000";
   elevInput.dispatchEvent(new window.Event("input"));
