@@ -284,7 +284,7 @@ function buildUnitSelect(selected, extraFirstOption) {
   return select;
 }
 
-function addIngredientRow(container, qty, unit, name) {
+function addIngredientRow(container, qty, unit, name, onRemove) {
   const row = document.createElement("div");
   row.className = "ing-row";
 
@@ -303,7 +303,7 @@ function addIngredientRow(container, qty, unit, name) {
   const removeBtn = document.createElement("button");
   removeBtn.type = "button"; removeBtn.className = "remove-btn"; removeBtn.title = "Remove ingredient";
   removeBtn.textContent = "×";
-  removeBtn.addEventListener("click", () => row.remove());
+  removeBtn.addEventListener("click", () => { row.remove(); if (onRemove) onRemove(); });
 
   row.appendChild(qtyInput);
   row.appendChild(unitSelect);
@@ -397,10 +397,107 @@ function renderRecipePicker(selectedId, routePrefix) {
     </div>`).join("")}</div>`;
 }
 
+// Renders one scaled-ingredient line plus its per-ingredient "convert to"
+// picker into `output`. Shared by the saved-recipe Scale Converter and the
+// ad-hoc (scanned-but-not-saved) one below, so the two stay in sync.
+function appendScaledIngredientRow(output, item, scaled) {
+  const unitLabel = item.unit || "";
+  const nameText = (item.name || "").trim() || "(unnamed ingredient)";
+
+  const line = document.createElement("div");
+  line.className = "scaled-row";
+
+  const left = document.createElement("span");
+  left.textContent = nameText;
+
+  const rightWrap = document.createElement("span");
+  rightWrap.className = "scaled-amt";
+  rightWrap.textContent = `${fmtNum(scaled)} ${unitLabel}`;
+
+  line.appendChild(left);
+  line.appendChild(rightWrap);
+  output.appendChild(line);
+
+  // per-ingredient convert-to picker
+  const convertRow = document.createElement("div");
+  convertRow.style.cssText = "display:flex;align-items:center;gap:8px;margin:-2px 0 8px;";
+  const convertSelect = buildUnitSelect("", "convert to…");
+  convertSelect.style.maxWidth = "160px";
+  const convertedOut = document.createElement("span");
+  convertedOut.style.fontSize = "0.85rem";
+  convertedOut.style.color = "var(--sage-dark)";
+  convertSelect.addEventListener("change", () => {
+    if (!convertSelect.value) { convertedOut.textContent = ""; return; }
+    const result = convertUnit(scaled, item.unit, convertSelect.value, item.name);
+    if (result.ok) {
+      convertedOut.textContent = `${result.approximate ? "≈" : "="} ${fmtNum(result.value)} ${convertSelect.value}`;
+      convertedOut.style.color = "var(--sage-dark)";
+    } else if (result.reason === "no-density") {
+      convertedOut.textContent = "can't convert — unknown ingredient density";
+      convertedOut.style.color = "var(--danger)";
+    } else {
+      convertedOut.textContent = "can't convert between these units";
+      convertedOut.style.color = "var(--danger)";
+    }
+  });
+  convertRow.appendChild(convertSelect);
+  convertRow.appendChild(convertedOut);
+  output.appendChild(convertRow);
+}
+
+function renderPopularConversionsTable() {
+  return `
+    <div class="card">
+      <h2>Popular conversions</h2>
+      <table class="temp-ref-table">
+        <tr><th>Amount</th><th>Equals</th></tr>
+        ${POPULAR_CONVERSIONS.map((c) => `<tr><td>${c.label}</td><td>${c.approx ? "≈" : "="} ${c.value} ${c.unit}</td></tr>`).join("")}
+      </table>
+    </div>
+  `;
+}
+
 // ---------- View: Scale Converter ----------
 function renderScale(id) {
   const recipe = id ? getRecipe(id) : null;
-  let body = pageHeader("Scale Converter") + renderRecipePicker(id, "#/scale/");
+  let body = `
+    ${pageHeader("Scale Converter")}
+    ${renderPopularConversionsTable()}
+    <div class="card">
+      <h2>Scan a Recipe</h2>
+      <p class="hint">Have a photo of a recipe you haven't saved yet? Scan it to scale it right here — no need to save it first.</p>
+      ${renderScanControl("scale-scan", "Upload a Photo")}
+    </div>
+    <div class="card" id="adhoc-scale-card" style="display:none;">
+      <h2>Scanned Recipe <span class="muted-msg" style="font-weight:400;">(not saved)</span></h2>
+      <div class="disclaimer">
+        <strong>Please check this carefully:</strong> automatic scanning can misread handwriting, smudges, or unusual formatting.
+        Compare the ingredients below against your photo, and fix anything wrong, before trusting the scaled amounts.
+      </div>
+      <div class="row-flex" style="margin-top:12px;">
+        <div class="field" style="flex:2; min-width:200px;">
+          <label for="adhoc-scale-title">Title</label>
+          <input type="text" id="adhoc-scale-title">
+        </div>
+        <div class="field" style="min-width:130px;">
+          <label for="adhoc-orig-servings">Original servings</label>
+          <input type="number" id="adhoc-orig-servings" min="0" step="any" value="4">
+        </div>
+      </div>
+      <label>Ingredients</label>
+      <div class="ing-header"><span>Qty</span><span>Unit</span><span>Ingredient</span><span></span></div>
+      <div id="adhoc-scale-ingredient-rows"></div>
+      <button class="btn secondary" type="button" id="adhoc-scale-add-ingredient-btn">+ Add Ingredient</button>
+      <div class="row-flex" style="margin-top:14px;">
+        <div class="field" style="min-width:160px;">
+          <label for="adhoc-target-servings">Scale to how many servings?</label>
+          <input type="number" id="adhoc-target-servings" min="0" step="any" value="4">
+        </div>
+      </div>
+      <div id="adhoc-scale-output"></div>
+    </div>
+    ${renderRecipePicker(id, "#/scale/")}
+  `;
   if (recipe) {
     body += `
       <div class="card">
@@ -420,6 +517,49 @@ function renderScale(id) {
 }
 
 function wireScale(id) {
+  // ---- Ad-hoc: scan a photo and scale it without saving ----
+  const adhocCard = document.getElementById("adhoc-scale-card");
+  const adhocRows = document.getElementById("adhoc-scale-ingredient-rows");
+  const adhocOrigServings = document.getElementById("adhoc-orig-servings");
+  const adhocTargetServings = document.getElementById("adhoc-target-servings");
+  const adhocOutput = document.getElementById("adhoc-scale-output");
+
+  function adhocRecompute() {
+    const origServings = parseFloat(adhocOrigServings.value);
+    const target = parseFloat(adhocTargetServings.value);
+    const items = readIngredientRows(adhocRows).filter((i) => i.name.trim() || !isNaN(i.qty));
+    adhocOutput.innerHTML = "";
+    for (const item of items) {
+      const scaled = scaleQty(item.qty, origServings, isNaN(target) ? 0 : target);
+      appendScaledIngredientRow(adhocOutput, item, scaled);
+    }
+    if (!items.length) {
+      adhocOutput.innerHTML = '<p class="muted-msg">Add at least one ingredient above to see scaled amounts.</p>';
+    }
+  }
+
+  document.getElementById("adhoc-scale-add-ingredient-btn").addEventListener("click", () => {
+    addIngredientRow(adhocRows, "", "", "", adhocRecompute);
+    adhocRecompute();
+  });
+  adhocOrigServings.addEventListener("input", adhocRecompute);
+  adhocTargetServings.addEventListener("input", adhocRecompute);
+  adhocRows.addEventListener("input", adhocRecompute);
+  adhocRows.addEventListener("change", adhocRecompute);
+
+  wireScanControl("scale-scan", (parsed) => {
+    adhocCard.style.display = "block";
+    document.getElementById("adhoc-scale-title").value = parsed.title || "";
+    adhocRows.innerHTML = "";
+    if (parsed.ingredients.length) {
+      parsed.ingredients.forEach((i) => addIngredientRow(adhocRows, i.qty, i.unit, i.name, adhocRecompute));
+    } else {
+      addIngredientRow(adhocRows, "", "", "", adhocRecompute);
+    }
+    adhocRecompute();
+  });
+
+  // ---- Saved recipe ----
   const recipe = id ? getRecipe(id) : null;
   if (!recipe) return;
   const targetInput = document.getElementById("target-servings");
@@ -430,48 +570,7 @@ function wireScale(id) {
     output.innerHTML = "";
     for (const item of recipe.ingredients || []) {
       const scaled = scaleQty(item.qty, recipe.servings, isNaN(target) ? 0 : target);
-      const unitLabel = item.unit || "";
-      const nameText = (item.name || "").trim() || "(unnamed ingredient)";
-
-      const line = document.createElement("div");
-      line.className = "scaled-row";
-
-      const left = document.createElement("span");
-      left.textContent = nameText;
-
-      const rightWrap = document.createElement("span");
-      rightWrap.className = "scaled-amt";
-      rightWrap.textContent = `${fmtNum(scaled)} ${unitLabel}`;
-
-      line.appendChild(left);
-      line.appendChild(rightWrap);
-      output.appendChild(line);
-
-      // per-ingredient convert-to picker
-      const convertRow = document.createElement("div");
-      convertRow.style.cssText = "display:flex;align-items:center;gap:8px;margin:-2px 0 8px;";
-      const convertSelect = buildUnitSelect("", "convert to…");
-      convertSelect.style.maxWidth = "160px";
-      const convertedOut = document.createElement("span");
-      convertedOut.style.fontSize = "0.85rem";
-      convertedOut.style.color = "var(--sage-dark)";
-      convertSelect.addEventListener("change", () => {
-        if (!convertSelect.value) { convertedOut.textContent = ""; return; }
-        const result = convertUnit(scaled, item.unit, convertSelect.value, item.name);
-        if (result.ok) {
-          convertedOut.textContent = `${result.approximate ? "≈" : "="} ${fmtNum(result.value)} ${convertSelect.value}`;
-          convertedOut.style.color = "var(--sage-dark)";
-        } else if (result.reason === "no-density") {
-          convertedOut.textContent = "can't convert — unknown ingredient density";
-          convertedOut.style.color = "var(--danger)";
-        } else {
-          convertedOut.textContent = "can't convert between these units";
-          convertedOut.style.color = "var(--danger)";
-        }
-      });
-      convertRow.appendChild(convertSelect);
-      convertRow.appendChild(convertedOut);
-      output.appendChild(convertRow);
+      appendScaledIngredientRow(output, item, scaled);
     }
     if (!(recipe.ingredients || []).length) {
       output.innerHTML = '<p class="muted-msg">This recipe has no ingredients yet.</p>';
@@ -483,49 +582,46 @@ function wireScale(id) {
 }
 
 // ---------- View: Allergen Checker ----------
-function renderAllergen(id) {
-  const recipe = id ? getRecipe(id) : null;
-  let body = pageHeader("Allergen Checker") + renderRecipePicker(id, "#/allergen/");
-  if (recipe) {
-    body += `
-      <div class="card">
-        <h2>${escapeHtml(recipe.title)}</h2>
-        <p class="hint">Select the categories you need to avoid, then check.</p>
-        <div class="allergen-checks">
-          <label><input type="checkbox" class="allergen-chk" value="dairy"> Dairy</label>
-          <label><input type="checkbox" class="allergen-chk" value="egg"> Egg</label>
-          <label><input type="checkbox" class="allergen-chk" value="gluten"> Gluten</label>
-          <label><input type="checkbox" class="allergen-chk" value="nuts"> Nuts</label>
-          <label><input type="checkbox" class="allergen-chk" value="soy"> Soy</label>
-        </div>
-        <div class="recipe-actions">
-          <button class="btn" id="check-allergens-btn">Check My Recipe</button>
-        </div>
-        <div id="allergen-results" style="margin-top:14px;"></div>
-        <div class="disclaimer">
-          <strong>Please note:</strong> these are general cooking substitution ideas and approximate ratios only —
-          a starting point to adjust by taste and texture, not verified medical or allergy-safety advice. Product
-          formulations change, and cross-contamination is a real risk. If you or someone you're cooking for has a
-          serious allergy, always check ingredient labels yourself and consult a doctor or allergist — do not rely
-          on this tool for safety decisions.
-        </div>
-      </div>
-    `;
-  }
-  return body;
+// Shared by the saved-recipe and ad-hoc (scanned-but-not-saved) Allergen
+// Checker flows — the checkbox row, check button, and results container.
+function renderAllergenCheckBlock(idPrefix) {
+  return `
+    <p class="hint">Select the categories you need to avoid, then check.</p>
+    <div class="allergen-checks">
+      <label><input type="checkbox" class="${idPrefix}-allergen-chk" value="dairy"> Dairy</label>
+      <label><input type="checkbox" class="${idPrefix}-allergen-chk" value="egg"> Egg</label>
+      <label><input type="checkbox" class="${idPrefix}-allergen-chk" value="gluten"> Gluten</label>
+      <label><input type="checkbox" class="${idPrefix}-allergen-chk" value="nuts"> Nuts</label>
+      <label><input type="checkbox" class="${idPrefix}-allergen-chk" value="soy"> Soy</label>
+    </div>
+    <div class="recipe-actions">
+      <button class="btn" id="${idPrefix}-check-allergens-btn">Check My Recipe</button>
+    </div>
+    <div id="${idPrefix}-allergen-results" class="allergen-results-box" style="margin-top:14px;"></div>
+  `;
 }
 
-function wireAllergen(id) {
-  const recipe = id ? getRecipe(id) : null;
-  if (!recipe) return;
-  document.getElementById("check-allergens-btn").addEventListener("click", () => {
-    const selected = Array.from(document.querySelectorAll(".allergen-chk:checked")).map((c) => c.value);
-    const resultsDiv = document.getElementById("allergen-results");
+const ALLERGEN_DISCLAIMER = `
+  <div class="disclaimer">
+    <strong>Please note:</strong> these are general cooking substitution ideas and approximate ratios only —
+    a starting point to adjust by taste and texture, not verified medical or allergy-safety advice. Product
+    formulations change, and cross-contamination is a real risk. If you or someone you're cooking for has a
+    serious allergy, always check ingredient labels yourself and consult a doctor or allergist — do not rely
+    on this tool for safety decisions.
+  </div>
+`;
+
+function wireAllergenChecker(idPrefix, getIngredientNames) {
+  const btn = document.getElementById(`${idPrefix}-check-allergens-btn`);
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const selected = Array.from(document.querySelectorAll(`.${idPrefix}-allergen-chk:checked`)).map((c) => c.value);
+    const resultsDiv = document.getElementById(`${idPrefix}-allergen-results`);
     if (!selected.length) {
       resultsDiv.innerHTML = '<p class="muted-msg">Select at least one category above, then check again.</p>';
       return;
     }
-    const names = (recipe.ingredients || []).map((i) => i.name).filter((n) => n && n.trim());
+    const names = getIngredientNames().filter((n) => n && n.trim());
     if (!names.length) {
       resultsDiv.innerHTML = '<p class="muted-msg">This recipe has no named ingredients yet.</p>';
       return;
@@ -541,6 +637,76 @@ function wireAllergen(id) {
         <div style="margin-top:4px;">${m.suggestion}</div>
       </div>`).join("");
   });
+}
+
+function renderAllergen(id) {
+  const recipe = id ? getRecipe(id) : null;
+  let body = `
+    ${pageHeader("Allergen Checker")}
+    <div class="card">
+      <h2>Scan a Recipe</h2>
+      <p class="hint">Have a photo of a recipe you haven't saved yet? Scan it to check it right here — no need to save it first.</p>
+      ${renderScanControl("allergen-scan", "Upload a Photo")}
+    </div>
+    <div class="card" id="adhoc-allergen-card" style="display:none;">
+      <h2>Scanned Recipe <span class="muted-msg" style="font-weight:400;">(not saved)</span></h2>
+      <div class="disclaimer">
+        <strong>Please check this carefully:</strong> automatic scanning can misread handwriting, smudges, or unusual formatting.
+        Compare the ingredients below against your photo, and fix anything wrong — accuracy matters most here.
+      </div>
+      <div class="field" style="margin-top:12px;">
+        <label for="adhoc-allergen-title">Title</label>
+        <input type="text" id="adhoc-allergen-title">
+      </div>
+      <label>Ingredients</label>
+      <div class="ing-header"><span>Qty</span><span>Unit</span><span>Ingredient</span><span></span></div>
+      <div id="adhoc-allergen-ingredient-rows"></div>
+      <button class="btn secondary" type="button" id="adhoc-allergen-add-ingredient-btn">+ Add Ingredient</button>
+      <div style="margin-top:14px;">
+        ${renderAllergenCheckBlock("adhoc-allergen")}
+      </div>
+      ${ALLERGEN_DISCLAIMER}
+    </div>
+    ${renderRecipePicker(id, "#/allergen/")}
+  `;
+  if (recipe) {
+    body += `
+      <div class="card">
+        <h2>${escapeHtml(recipe.title)}</h2>
+        ${renderAllergenCheckBlock("saved")}
+        ${ALLERGEN_DISCLAIMER}
+      </div>
+    `;
+  }
+  return body;
+}
+
+function wireAllergen(id) {
+  // ---- Ad-hoc: scan a photo and check it without saving ----
+  const adhocCard = document.getElementById("adhoc-allergen-card");
+  const adhocRows = document.getElementById("adhoc-allergen-ingredient-rows");
+
+  document.getElementById("adhoc-allergen-add-ingredient-btn").addEventListener("click", () => {
+    addIngredientRow(adhocRows, "", "", "");
+  });
+
+  wireScanControl("allergen-scan", (parsed) => {
+    adhocCard.style.display = "block";
+    document.getElementById("adhoc-allergen-title").value = parsed.title || "";
+    adhocRows.innerHTML = "";
+    if (parsed.ingredients.length) {
+      parsed.ingredients.forEach((i) => addIngredientRow(adhocRows, i.qty, i.unit, i.name));
+    } else {
+      addIngredientRow(adhocRows, "", "", "");
+    }
+  });
+
+  wireAllergenChecker("adhoc-allergen", () => readIngredientRows(adhocRows).map((i) => i.name));
+
+  // ---- Saved recipe ----
+  const recipe = id ? getRecipe(id) : null;
+  if (!recipe) return;
+  wireAllergenChecker("saved", () => (recipe.ingredients || []).map((i) => i.name));
 }
 
 // ---------- View: Temperature Converter ----------

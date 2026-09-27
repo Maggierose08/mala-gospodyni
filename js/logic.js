@@ -153,6 +153,34 @@ function fmtNum(n) {
   return rounded.toString();
 }
 
+// Popular volume/weight conversions people look up most while scaling a
+// recipe by hand — not tied to any specific recipe, just a quick-reference
+// list, the same spirit as OVEN_TEMP_QUICK_REF above. Computed from the
+// same VOLUME_TO_ML / WEIGHT_TO_G tables convertUnit() itself uses, so
+// there's only one place these numbers can ever get out of sync.
+// `approx` marks a pair that crosses the metric/US-customary line (e.g.
+// cups to mL) — genuinely a rounded approximation — vs. an exact
+// definitional ratio within one system (e.g. 1 lb is exactly 16 oz).
+function popularConversion(label, qty, fromUnit, toUnit, approx) {
+  const result = convertUnit(qty, fromUnit, toUnit, "");
+  return { label, value: fmtNum(result.value), unit: toUnit, approx: !!approx };
+}
+
+const POPULAR_CONVERSIONS = [
+  popularConversion("1 tbsp", 1, "tbsp", "tsp"),
+  popularConversion("1/4 cup", 0.25, "cup", "tbsp"),
+  popularConversion("1 cup", 1, "cup", "tbsp"),
+  popularConversion("1 cup", 1, "cup", "tsp"),
+  popularConversion("1 cup", 1, "cup", "fl oz"),
+  popularConversion("1 cup", 1, "cup", "mL", true),
+  popularConversion("1 L", 1, "L", "mL"),
+  popularConversion("1 L", 1, "L", "cup", true),
+  popularConversion("1 lb", 1, "lb", "oz"),
+  popularConversion("1 kg", 1, "kg", "g"),
+  popularConversion("1 kg", 1, "kg", "lb", true),
+  popularConversion("1 oz", 1, "oz", "g", true),
+];
+
 // ============================================================
 // Scan a Recipe — turning raw OCR text into recipe form fields.
 //
@@ -247,7 +275,7 @@ function parseOcrText(rawText) {
 // for the Node-based test script.
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, ALLERGEN_MAP,
+    VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, POPULAR_CONVERSIONS, ALLERGEN_MAP,
     findDensity, convertUnit, scaleQty, fToC, cToF, altitudeAdjustment, checkAllergens, fmtNum,
     parseOcrText,
   };
