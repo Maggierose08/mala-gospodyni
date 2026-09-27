@@ -1611,10 +1611,11 @@ function wireCommunityList() {
   const searchInput = document.getElementById("community-search");
 
   function renderFolders(all) {
-    if (!all.length) {
-      foldersDiv.innerHTML = `<p class="muted-msg">No one has shared a recipe yet — share one of yours from the Recipes tab!</p>`;
-      return;
-    }
+    // Same convention as the Recipes tab's own folder grid: the folders are
+    // always there (even at a 0 count each), with a friendly note on top
+    // when nothing's been shared yet at all -- rather than hiding the whole
+    // grid, which just left people wondering where the folders went.
+    const emptyNote = all.length ? "" : `<p class="muted-msg">No one has shared a recipe yet — share one of yours from the Recipes tab!</p>`;
     const folderTiles = RECIPE_CATEGORIES.map((c) => {
       const count = all.filter((r) => r.category === c.key).length;
       return `
@@ -1629,7 +1630,7 @@ function wireCommunityList() {
         ${ICONS.folder}<span>Uncategorized</span>
         <span class="hint" style="margin:0;">${uncategorizedCount} recipe${uncategorizedCount === 1 ? "" : "s"}</span>
       </div>` : "";
-    foldersDiv.innerHTML = `<div class="home-grid">${folderTiles}${uncategorizedTile}</div>`;
+    foldersDiv.innerHTML = `${emptyNote}<div class="home-grid">${folderTiles}${uncategorizedTile}</div>`;
     foldersDiv.querySelectorAll("[data-route]").forEach((n) => {
       n.addEventListener("click", () => { location.hash = n.getAttribute("data-route"); });
     });

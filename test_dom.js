@@ -523,6 +523,18 @@ async function main() {
   assert(shareLog.includes("unshare:" + savedShared.id), "unchecking Share and saving calls window.MG.unshareFromCommunity");
 
   // ---- Community Recipes: folders, searching, viewing, saving a copy, reporting ----
+
+  // Folders should still show (at a 0 count each) when nothing's been
+  // shared yet, rather than disappearing entirely -- same convention as
+  // the Recipes tab's own folder grid.
+  const savedCommunityPool = communityPool;
+  communityPool = [];
+  go("#/community");
+  await flush();
+  assert(window.document.querySelectorAll("#community-folders .home-box").length === 4, "community recipes still shows the 4 folders when nothing's been shared yet, got " + window.document.querySelectorAll("#community-folders .home-box").length);
+  assert(/No one has shared a recipe yet/.test(window.document.getElementById("community-folders").textContent), "empty community pool shows the friendly note above the folders");
+  communityPool = savedCommunityPool;
+
   go("#/community");
   await flush();
   const communityFolderBoxes = window.document.querySelectorAll("#community-folders .home-box");
