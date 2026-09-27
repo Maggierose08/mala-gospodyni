@@ -1,7 +1,7 @@
 // Minimal service worker: caches the app shell so it works offline and can
 // be installed to a phone/desktop home screen. Bump CACHE_NAME whenever the
 // cached files change, so returning visitors get the new version.
-const CACHE_NAME = "mala-gospodyni-v17";
+const CACHE_NAME = "mala-gospodyni-v18";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -23,8 +23,17 @@ const APP_SHELL = [
 ];
 
 self.addEventListener("install", (event) => {
+  // cache.addAll() lets the browser reuse its own HTTP cache for each
+  // request, which can silently hand us a stale copy of a file (e.g. an
+  // old app.js) even under a brand-new CACHE_NAME, so returning visitors
+  // never actually get the update. { cache: "reload" } forces every
+  // app-shell file to be fetched fresh from the network on install.
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      .then((cache) =>
+        Promise.all(APP_SHELL.map((url) => fetch(url, { cache: "reload" }).then((response) => cache.put(url, response))))
+      )
+      .then(() => self.skipWaiting())
   );
 });
 
