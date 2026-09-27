@@ -59,14 +59,16 @@ body {
   width: auto;
   display: block;
 }
-/* App title: a handwritten script, like a note on a recipe card -- set
-   apart from the section-heading serif used everywhere else. Script
-   fonts read smaller than their font-size, so this needs to run larger
-   than the plain 1.15rem the button itself is set at. */
+/* App title: an elegant flowing script -- set apart from the
+   section-heading serif used everywhere else. Script fonts read smaller
+   than their font-size, so this needs to run larger than the plain
+   1.15rem the button itself is set at. Parisienne only ships a single
+   (regular) weight, so no font-weight override here -- a browser-faked
+   bold would distort its calligraphic strokes. */
 .topbar .brand span {
-  font-family: "Caveat", cursive;
-  font-size: 1.75rem;
-  font-weight: 700;
+  font-family: "Parisienne", cursive;
+  font-size: 2.1rem;
+  font-weight: 400;
 }
 
 .icon-btn {
