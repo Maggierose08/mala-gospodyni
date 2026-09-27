@@ -1,7 +1,7 @@
 // Minimal service worker: caches the app shell so it works offline and can
 // be installed to a phone/desktop home screen. Bump CACHE_NAME whenever the
 // cached files change, so returning visitors get the new version.
-const CACHE_NAME = "mala-gospodyni-v15";
+const CACHE_NAME = "mala-gospodyni-v16";
 const APP_SHELL = [
   "./",
   "./index.html",
