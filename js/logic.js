@@ -76,6 +76,21 @@ const OVEN_TEMP_QUICK_REF = [
   { f: 450, c: 230 }, { f: 475, c: 245 }, { f: 500, c: 260 },
 ];
 
+// Minimum safe internal temperatures, straight from the USDA Food Safety
+// and Inspection Service's safe minimum internal temperature chart
+// (fsis.usda.gov) — a food thermometer is the only reliable way to check
+// these, not color or juices.
+const SAFE_MEAT_TEMPS = [
+  { food: "Beef, pork, veal & lamb — steaks, roasts, chops", f: 145, c: 62.8, note: "Let it rest at least 3 minutes before cutting or serving — the temperature keeps rising and evens out during that time." },
+  { food: "Ground meat — beef, pork, veal, lamb", f: 160, c: 71.1, note: "Grinding mixes any surface bacteria all through the meat, so ground meat needs a higher temperature than a whole cut." },
+  { food: "Ham, fresh or smoked (uncooked)", f: 145, c: 62.8, note: "Let it rest at least 3 minutes before serving." },
+  { food: "Fully cooked ham (to reheat)", f: 140, c: 60, note: "That's for a USDA-inspected, packaged ham — reheat any other ham to 165°F (73.9°C)." },
+  { food: "All poultry — chicken, turkey, duck, whole or ground", f: 165, c: 73.9, note: "Check the thickest part of the breast and the innermost part of the thigh and wing." },
+  { food: "Eggs", f: 160, c: 71.1, note: "For dishes without a thermometer: both the yolk and white should be firm." },
+  { food: "Fish & shellfish", f: 145, c: 62.8, note: "Fish is done when it's opaque and flakes easily with a fork." },
+  { food: "Leftovers & casseroles", f: 165, c: 73.9, note: "" },
+];
+
 // Gas, electric, and convection ovens behave differently even set to the
 // "same" temperature. Recipes are generally written and tested in a
 // standard electric (or unspecified "conventional") oven, so this offers
@@ -888,7 +903,7 @@ const SUBSTITUTION_CATEGORIES = [
 // for the Node-based test script.
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, POPULAR_CONVERSIONS, OVEN_TYPES, ALLERGEN_MAP,
+    VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, SAFE_MEAT_TEMPS, POPULAR_CONVERSIONS, OVEN_TYPES, ALLERGEN_MAP,
     findDensity, convertUnit, scaleQty, fToC, cToF, altitudeAdjustment, checkAllergens, findIngredientSubstitutions, fmtNum,
     parseOcrText,
     RECIPE_TEMPLATES, detectDietaryFilters, parseServingsFromRequest, matchRecipeTemplates, generateRecipe,

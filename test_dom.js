@@ -232,15 +232,17 @@ async function main() {
   // ---- Temperature Converter ----
   // The Temperature Converter tab is now a folder grid (same pattern as
   // Recipes and Scale Converter): Oven Type, Quick Reference, Convert Any
-  // Temperature, and Altitude Adjustment are separate pages.
+  // Temperature, Altitude Adjustment, and Safe Meat Temperatures are
+  // separate pages.
   go("#/temp");
   const tempFolderBoxes = window.document.querySelectorAll("#view .home-box");
-  assert(tempFolderBoxes.length === 4, "temperature converter shows 4 folders, got " + tempFolderBoxes.length);
+  assert(tempFolderBoxes.length === 5, "temperature converter shows 5 folders, got " + tempFolderBoxes.length);
   const tempHomeText = window.document.getElementById("view").textContent;
   assert(/Oven Type/.test(tempHomeText), "temp folder grid includes Oven Type");
   assert(/Quick Reference/.test(tempHomeText), "temp folder grid includes Quick Reference");
   assert(/Convert Any Temperature/.test(tempHomeText), "temp folder grid includes Convert Any Temperature");
   assert(/Altitude Adjustment/.test(tempHomeText), "temp folder grid includes Altitude Adjustment");
+  assert(/Safe Meat Temperatures/.test(tempHomeText), "temp folder grid includes Safe Meat Temperatures");
 
   // Oven type — the "check a temperature for your oven" note now lives
   // here (moved off the Convert Any Temperature page along with the rest
@@ -291,6 +293,17 @@ async function main() {
   elevInput.value = "6000";
   elevInput.dispatchEvent(new window.Event("input"));
   assert(/oven temperature/.test(window.document.getElementById("altitude-result").textContent), "altitude adjustment shows guidance at 6000ft");
+
+  // Safe meat temperatures (static USDA reference)
+  go("#/temp/safe-meat");
+  const safeMeatBackBtn = window.document.getElementById("back-btn");
+  assert(safeMeatBackBtn.getAttribute("data-back-route") === "#/temp", "Safe Meat Temperatures page's back button returns to the Temperature Converter folder grid");
+  const safeMeatText = window.document.getElementById("view").textContent;
+  assert(/food thermometer/i.test(safeMeatText), "safe meat temperatures page tells you to use a food thermometer");
+  assert(/Ground meat/.test(safeMeatText) && /160.F/.test(safeMeatText), "safe meat temperatures include ground meat at 160°F");
+  assert(/All poultry/.test(safeMeatText) && /165.F/.test(safeMeatText), "safe meat temperatures include poultry at 165°F");
+  assert(/Fish & shellfish/.test(safeMeatText) && /145.F/.test(safeMeatText), "safe meat temperatures include fish & shellfish at 145°F");
+  assert(window.document.querySelectorAll("#view .card").length === 8, "safe meat temperatures page shows all 8 entries as cards");
 
   // ---- Recipe Creator ----
   go("#/create");

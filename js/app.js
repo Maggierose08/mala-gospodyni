@@ -899,6 +899,7 @@ function renderTempHome() {
       <div class="home-box blush" data-route="#/temp/quick-ref">${ICONS.book}<span>Quick Reference</span></div>
       <div class="home-box" data-route="#/temp/convert">${ICONS.swap}<span>Convert Any Temperature</span></div>
       <div class="home-box blush" data-route="#/temp/altitude">${ICONS.mountain}<span>Altitude Adjustment</span></div>
+      <div class="home-box butter" data-route="#/temp/safe-meat">${ICONS.skewer}<span>Safe Meat Temperatures</span></div>
     </div>
   `;
 }
@@ -1036,6 +1037,22 @@ function wireTempAltitude() {
     if (elevationInput.value === "" || isNaN(ft)) { altResult.textContent = ""; return; }
     altResult.textContent = altitudeAdjustment(ft).message;
   });
+}
+
+function renderTempSafeMeat() {
+  return `
+    ${pageHeader("Safe Meat Temperatures", "#/temp")}
+    <div class="disclaimer">
+      <strong>Use a food thermometer.</strong> Color and juices alone can't reliably tell you meat is safe to eat.
+      These are the minimum internal temperatures recommended by the USDA Food Safety and Inspection Service.
+    </div>
+    ${SAFE_MEAT_TEMPS.map((e) => `
+      <div class="card">
+        <h2>${escapeHtml(e.food)}</h2>
+        <p>${e.f}°F (${e.c}°C)</p>
+        ${e.note ? `<p class="hint">${escapeHtml(e.note)}</p>` : ""}
+      </div>`).join("")}
+  `;
 }
 
 // ---------- View: Recipe Creator ----------
@@ -1741,6 +1758,7 @@ function currentRoute() {
   if (hash === "#/temp/quick-ref") return { name: "temp-quick-ref" };
   if (hash === "#/temp/convert") return { name: "temp-convert" };
   if (hash === "#/temp/altitude") return { name: "temp-altitude" };
+  if (hash === "#/temp/safe-meat") return { name: "temp-safe-meat" };
   if (hash === "#/temp") return { name: "temp-home" };
   if (hash.startsWith("#/community/")) return { name: "community-detail", id: parts[2] };
   if (hash === "#/community") return { name: "community-home" };
@@ -1787,6 +1805,8 @@ function render() {
   } else if (route.name === "temp-altitude") {
     view.innerHTML = renderTempAltitude();
     wireTempAltitude();
+  } else if (route.name === "temp-safe-meat") {
+    view.innerHTML = renderTempSafeMeat();
   } else if (route.name === "community-home") {
     view.innerHTML = renderCommunityList();
     wireCommunityList();
