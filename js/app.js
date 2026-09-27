@@ -570,11 +570,7 @@ function renderScaleConvert(id) {
         Compare the ingredients below against your photo, and fix anything wrong, before trusting the scaled amounts.
       </div>
       <div class="row-flex" style="margin-top:12px;">
-        <div class="field" style="flex:2; min-width:200px;">
-          <label for="adhoc-scale-title">Title <span class="muted-msg" style="font-weight:400;">(optional)</span></label>
-          <input type="text" id="adhoc-scale-title">
-        </div>
-        <div class="field" style="min-width:130px;">
+        <div class="field" style="min-width:160px;">
           <label for="adhoc-orig-servings">Original servings</label>
           <input type="number" id="adhoc-orig-servings" min="0" step="any" value="4">
         </div>
@@ -648,7 +644,6 @@ function wireScaleConvert(id) {
 
   wireScanControl("scale-scan", (parsed) => {
     scanReminder.style.display = "block";
-    document.getElementById("adhoc-scale-title").value = parsed.title || "";
     adhocRows.innerHTML = "";
     if (parsed.ingredients.length) {
       parsed.ingredients.forEach((i) => addIngredientRow(adhocRows, i.qty, i.unit, i.name, adhocRecompute));
@@ -752,11 +747,7 @@ function renderAllergen(id) {
         <strong>Please check this carefully:</strong> automatic scanning can misread handwriting, smudges, or unusual formatting.
         Compare the ingredients below against your photo, and fix anything wrong — accuracy matters most here.
       </div>
-      <div class="field" style="margin-top:12px;">
-        <label for="adhoc-allergen-title">Title <span class="muted-msg" style="font-weight:400;">(optional)</span></label>
-        <input type="text" id="adhoc-allergen-title">
-      </div>
-      <label>Ingredients</label>
+      <label style="margin-top:12px;">Ingredients</label>
       <div class="ing-header"><span>Qty</span><span>Unit</span><span>Ingredient</span><span></span></div>
       <div id="adhoc-allergen-ingredient-rows"></div>
       <button class="btn secondary" type="button" id="adhoc-allergen-add-ingredient-btn">+ Add Ingredient</button>
@@ -794,7 +785,6 @@ function wireAllergen(id) {
 
   wireScanControl("allergen-scan", (parsed) => {
     scanReminder.style.display = "block";
-    document.getElementById("adhoc-allergen-title").value = parsed.title || "";
     adhocRows.innerHTML = "";
     if (parsed.ingredients.length) {
       parsed.ingredients.forEach((i) => addIngredientRow(adhocRows, i.qty, i.unit, i.name));
