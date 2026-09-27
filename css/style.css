@@ -54,6 +54,11 @@ body {
 }
 
 .topbar .brand svg { width: 26px; height: 26px; }
+.topbar .brand img.brand-mark {
+  height: 44px;
+  width: auto;
+  display: block;
+}
 
 .icon-btn {
   background: var(--card);
