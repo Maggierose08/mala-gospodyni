@@ -357,3 +357,15 @@ button.btn.danger:hover { background: #93433d; }
   font-family: inherit;
 }
 .link-btn:hover { color: var(--sage); }
+
+/* Lightweight heading for a subsection that isn't its own card, e.g.
+   "Or use a saved recipe" under the Scale/Allergen "convert your own"
+   sections. */
+.section-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin: 18px 4px 8px;
+}

@@ -464,19 +464,16 @@ function renderScale(id) {
     ${pageHeader("Scale Converter")}
     ${renderPopularConversionsTable()}
     <div class="card">
-      <h2>Scan a Recipe</h2>
-      <p class="hint">Have a photo of a recipe you haven't saved yet? Scan it to scale it right here — no need to save it first.</p>
-      ${renderScanControl("scale-scan", "Upload a Photo")}
-    </div>
-    <div class="card" id="adhoc-scale-card" style="display:none;">
-      <h2>Scanned Recipe <span class="muted-msg" style="font-weight:400;">(not saved)</span></h2>
-      <div class="disclaimer">
+      <h2>Convert your own ingredients</h2>
+      <p class="hint">Add ingredients by hand below, or scan a photo of a recipe you haven't saved yet — no need to save it first.</p>
+      ${renderScanControl("scale-scan", "Scan a Photo Instead")}
+      <div id="scale-scan-reminder" class="disclaimer" style="display:none;">
         <strong>Please check this carefully:</strong> automatic scanning can misread handwriting, smudges, or unusual formatting.
         Compare the ingredients below against your photo, and fix anything wrong, before trusting the scaled amounts.
       </div>
       <div class="row-flex" style="margin-top:12px;">
         <div class="field" style="flex:2; min-width:200px;">
-          <label for="adhoc-scale-title">Title</label>
+          <label for="adhoc-scale-title">Title <span class="muted-msg" style="font-weight:400;">(optional)</span></label>
           <input type="text" id="adhoc-scale-title">
         </div>
         <div class="field" style="min-width:130px;">
@@ -496,6 +493,7 @@ function renderScale(id) {
       </div>
       <div id="adhoc-scale-output"></div>
     </div>
+    <p class="section-label">Or use a saved recipe</p>
     ${renderRecipePicker(id, "#/scale/")}
   `;
   if (recipe) {
@@ -517,12 +515,12 @@ function renderScale(id) {
 }
 
 function wireScale(id) {
-  // ---- Ad-hoc: scan a photo and scale it without saving ----
-  const adhocCard = document.getElementById("adhoc-scale-card");
+  // ---- Convert your own ingredients (blank by default; scan to fill in) ----
   const adhocRows = document.getElementById("adhoc-scale-ingredient-rows");
   const adhocOrigServings = document.getElementById("adhoc-orig-servings");
   const adhocTargetServings = document.getElementById("adhoc-target-servings");
   const adhocOutput = document.getElementById("adhoc-scale-output");
+  const scanReminder = document.getElementById("scale-scan-reminder");
 
   function adhocRecompute() {
     const origServings = parseFloat(adhocOrigServings.value);
@@ -538,6 +536,9 @@ function wireScale(id) {
     }
   }
 
+  // Start with one blank editable row, like the New Recipe form.
+  addIngredientRow(adhocRows, "", "", "", adhocRecompute);
+
   document.getElementById("adhoc-scale-add-ingredient-btn").addEventListener("click", () => {
     addIngredientRow(adhocRows, "", "", "", adhocRecompute);
     adhocRecompute();
@@ -548,7 +549,7 @@ function wireScale(id) {
   adhocRows.addEventListener("change", adhocRecompute);
 
   wireScanControl("scale-scan", (parsed) => {
-    adhocCard.style.display = "block";
+    scanReminder.style.display = "block";
     document.getElementById("adhoc-scale-title").value = parsed.title || "";
     adhocRows.innerHTML = "";
     if (parsed.ingredients.length) {
@@ -558,6 +559,8 @@ function wireScale(id) {
     }
     adhocRecompute();
   });
+
+  adhocRecompute();
 
   // ---- Saved recipe ----
   const recipe = id ? getRecipe(id) : null;
@@ -644,18 +647,15 @@ function renderAllergen(id) {
   let body = `
     ${pageHeader("Allergen Checker")}
     <div class="card">
-      <h2>Scan a Recipe</h2>
-      <p class="hint">Have a photo of a recipe you haven't saved yet? Scan it to check it right here — no need to save it first.</p>
-      ${renderScanControl("allergen-scan", "Upload a Photo")}
-    </div>
-    <div class="card" id="adhoc-allergen-card" style="display:none;">
-      <h2>Scanned Recipe <span class="muted-msg" style="font-weight:400;">(not saved)</span></h2>
-      <div class="disclaimer">
+      <h2>Check your own ingredients</h2>
+      <p class="hint">Add ingredients by hand below, or scan a photo of a recipe you haven't saved yet — no need to save it first.</p>
+      ${renderScanControl("allergen-scan", "Scan a Photo Instead")}
+      <div id="allergen-scan-reminder" class="disclaimer" style="display:none;">
         <strong>Please check this carefully:</strong> automatic scanning can misread handwriting, smudges, or unusual formatting.
         Compare the ingredients below against your photo, and fix anything wrong — accuracy matters most here.
       </div>
       <div class="field" style="margin-top:12px;">
-        <label for="adhoc-allergen-title">Title</label>
+        <label for="adhoc-allergen-title">Title <span class="muted-msg" style="font-weight:400;">(optional)</span></label>
         <input type="text" id="adhoc-allergen-title">
       </div>
       <label>Ingredients</label>
@@ -667,6 +667,7 @@ function renderAllergen(id) {
       </div>
       ${ALLERGEN_DISCLAIMER}
     </div>
+    <p class="section-label">Or use a saved recipe</p>
     ${renderRecipePicker(id, "#/allergen/")}
   `;
   if (recipe) {
@@ -682,16 +683,19 @@ function renderAllergen(id) {
 }
 
 function wireAllergen(id) {
-  // ---- Ad-hoc: scan a photo and check it without saving ----
-  const adhocCard = document.getElementById("adhoc-allergen-card");
+  // ---- Check your own ingredients (blank by default; scan to fill in) ----
   const adhocRows = document.getElementById("adhoc-allergen-ingredient-rows");
+  const scanReminder = document.getElementById("allergen-scan-reminder");
+
+  // Start with one blank editable row, like the New Recipe form.
+  addIngredientRow(adhocRows, "", "", "");
 
   document.getElementById("adhoc-allergen-add-ingredient-btn").addEventListener("click", () => {
     addIngredientRow(adhocRows, "", "", "");
   });
 
   wireScanControl("allergen-scan", (parsed) => {
-    adhocCard.style.display = "block";
+    scanReminder.style.display = "block";
     document.getElementById("adhoc-allergen-title").value = parsed.title || "";
     adhocRows.innerHTML = "";
     if (parsed.ingredients.length) {
