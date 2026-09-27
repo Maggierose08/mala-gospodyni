@@ -47,6 +47,12 @@ async function main() {
   go("#/recipes");
   assert(/No recipes saved yet/.test(window.document.getElementById("view").textContent), "empty recipes list shows message");
   assert(/Sign in.*sync/i.test(window.document.getElementById("view").textContent), "recipes list shows local-only sync hint when signed out");
+  const folderBoxes = window.document.querySelectorAll("#view .home-box");
+  assert(folderBoxes.length === 4, "recipes list shows the 4 category folders (no Uncategorized folder yet, since nothing's saved), got " + folderBoxes.length);
+  assert(/Main Courses/.test(window.document.getElementById("view").textContent), "recipes list includes a Main Courses folder");
+  assert(/Desserts/.test(window.document.getElementById("view").textContent), "recipes list includes a Desserts folder");
+  assert(/Sides/.test(window.document.getElementById("view").textContent), "recipes list includes a Sides folder");
+  assert(/Appetizers/.test(window.document.getElementById("view").textContent), "recipes list includes an Appetizers folder");
 
   // ---- Create a new recipe ----
   go("#/recipe/new");
@@ -68,6 +74,12 @@ async function main() {
   rows2[1].querySelector(".ing-unit").value = "";
   rows2[1].querySelector(".ing-name").value = "eggs";
 
+  // File it under Desserts via the category pills.
+  const dessertPill = Array.from(window.document.querySelectorAll(".category-pill")).find((p) => p.getAttribute("data-category") === "dessert");
+  assert(!!dessertPill, "new recipe form shows a Desserts category pill");
+  dessertPill.click();
+  assert(dessertPill.classList.contains("selected"), "clicking the Desserts pill selects it");
+
   window.document.getElementById("save-recipe-btn").click();
   await flush();
 
@@ -75,11 +87,19 @@ async function main() {
   assert(Array.isArray(saved) && saved.length === 1, "recipe persisted to localStorage");
   assert(saved[0].title === "Test Banana Bread", "saved recipe has correct title");
   assert(saved[0].ingredients.length === 2, "saved recipe has 2 ingredients");
+  assert(saved[0].category === "dessert", "saved recipe remembers its chosen category, got: " + saved[0].category);
   assert(window.location.hash === "#/recipes", "saving redirects to recipes list");
 
-  // ---- Recipes list now shows it ----
+  // ---- Recipes list now shows an updated Desserts count ----
   go("#/recipes");
-  assert(/Test Banana Bread/.test(window.document.getElementById("view").textContent), "recipes list shows the saved recipe");
+  assert(/Desserts/.test(window.document.getElementById("view").textContent) && /1 recipe/.test(window.document.getElementById("view").textContent), "Desserts folder shows a count of 1");
+  assert(window.document.querySelectorAll("#view .home-box").length === 4, "still no Uncategorized folder, since the one recipe was filed under Desserts");
+
+  // ---- Drilling into the Desserts folder shows the recipe ----
+  go("#/recipes/dessert");
+  assert(/Test Banana Bread/.test(window.document.getElementById("view").textContent), "Desserts folder page shows the saved recipe");
+  const dessertBackBtn = window.document.getElementById("back-btn");
+  assert(dessertBackBtn.getAttribute("data-back-route") === "#/recipes", "Desserts folder page's back button returns to the Recipes folder grid, not Home");
 
   const recipeId = saved[0].id;
 
@@ -243,6 +263,8 @@ async function main() {
   go("#/recipe/edit/" + recipeId);
   assert(window.document.getElementById("recipe-title").value === "Test Banana Bread", "edit form prefills existing title");
   assert(window.document.querySelectorAll(".ing-row").length === 2, "edit form prefills existing ingredient rows");
+  const prefilledDessertPill = Array.from(window.document.querySelectorAll(".category-pill")).find((p) => p.getAttribute("data-category") === "dessert");
+  assert(prefilledDessertPill.classList.contains("selected"), "edit form prefills the recipe's existing category (Desserts)");
   window.document.getElementById("delete-recipe-btn").click(); // triggers confirm() -> jsdom default confirm returns false
   await flush();
   // jsdom's window.confirm returns false by default, so the recipe should NOT be deleted yet.

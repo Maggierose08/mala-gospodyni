@@ -386,3 +386,23 @@ button.btn.danger:hover { background: #93433d; }
   width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--sage);
 }
 .grocery-row.have .grocery-text { text-decoration: line-through; color: var(--muted); }
+
+/* ---------- Recipe folders (Main Courses / Desserts / Sides / Appetizers) ---------- */
+.category-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+.category-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px 14px;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.category-pill svg { width: 16px; height: 16px; }
+.category-pill:hover { border-color: var(--sage); }
+.category-pill.selected { border-color: var(--sage); background: #f6faf6; color: var(--sage-dark); }

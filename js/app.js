@@ -16,7 +16,22 @@ const ICONS = {
   swap: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>`,
   camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.3"/></svg>`,
   wand: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 15 9"/><path d="M17 3v3M22 8h-3M17.5 5.5l-2 2"/><path d="M6 3v3M9 5H6M6.5 3.5l-1 1"/><path d="M19 15v3M21 18h-3"/></svg>`,
+  utensils: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11"/><path d="M7 2v5M10 2v5"/><path d="M17 2c-1.7 0-3 2-3 5s1.3 5 3 5v10"/></svg>`,
+  cupcake: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10h10l-1.4 8.8a2 2 0 0 1-2 1.7h-3.2a2 2 0 0 1-2-1.7L7 10Z"/><path d="M8 10a4 4 0 0 1 8 0"/><path d="M12 3v3M9.3 4.6l1.2 1.3M14.7 4.6l-1.2 1.3"/></svg>`,
+  bowl: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18a9 9 0 0 1-18 0Z"/><path d="M12 11V8M8.5 11l-1-2.5M15.5 11l1-2.5"/></svg>`,
+  skewer: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 20 4"/><circle cx="9" cy="15" r="2"/><circle cx="13" cy="11" r="2"/><circle cx="17" cy="7" r="2"/></svg>`,
+  folder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>`,
 };
+
+// Recipes are organized into these folders (plus an "uncategorized" bucket
+// for anything not yet filed) — shown as a home-screen-style grid on the
+// Recipes tab, and offered as a set of pick-one buttons on the recipe form.
+const RECIPE_CATEGORIES = [
+  { key: "main", label: "Main Courses", icon: "utensils", color: "butter" },
+  { key: "dessert", label: "Desserts", icon: "cupcake", color: "blush" },
+  { key: "side", label: "Sides", icon: "bowl", color: "" },
+  { key: "appetizer", label: "Appetizers", icon: "skewer", color: "blush" },
+];
 
 // ---------- Storage ----------
 // Signed out: recipes live in this browser's localStorage, exactly as in
@@ -158,9 +173,12 @@ function wireScanControl(idPrefix, onResult) {
   });
 }
 
-function pageHeader(title) {
+// `backRoute` defaults to Home, but a drill-down page (like a recipe
+// category, nested under the Recipes tab) can pass its parent route instead
+// so the back arrow returns there rather than skipping past it.
+function pageHeader(title, backRoute) {
   return `<div class="page-header">
-    <button class="back-btn" id="back-btn" title="Back to Home">←</button>
+    <button class="back-btn" id="back-btn" title="Back" data-back-route="${backRoute || "#/home"}">←</button>
     <h1>${title}</h1>
   </div>`;
 }
@@ -182,10 +200,9 @@ function renderHome() {
   `;
 }
 
-// ---------- View: Recipes list ----------
-function renderRecipesList() {
-  const recipes = getRecipes();
-  const rows = recipes.length
+// ---------- View: Recipes (folders) ----------
+function renderRecipeCardRows(recipes) {
+  return recipes.length
     ? recipes.map((r) => `
         <div class="recipe-card" data-open-recipe="${r.id}">
           <div>
@@ -194,19 +211,55 @@ function renderRecipesList() {
           </div>
           <span>›</span>
         </div>`).join("")
-    : `<p class="muted-msg">No recipes saved yet — add your first one below.</p>`;
+    : `<p class="muted-msg">No recipes here yet.</p>`;
+}
+
+function renderRecipesList() {
+  const recipes = getRecipes();
+  const uncategorized = recipes.filter((r) => !r.category);
 
   const syncNote = isSignedIn()
     ? `<p class="hint">☁ Synced to your account — these recipes follow you to any device you sign into.</p>`
     : `<p class="hint">💾 Saved on this device only. <a href="#/profile">Sign in</a> to sync recipes across your phone and computer.</p>`;
 
+  const folderTiles = RECIPE_CATEGORIES.map((c) => {
+    const count = recipes.filter((r) => r.category === c.key).length;
+    return `
+      <div class="home-box ${c.color}" data-route="#/recipes/${c.key}">
+        ${ICONS[c.icon]}<span>${c.label}</span>
+        <span class="hint" style="margin:0;">${count} recipe${count === 1 ? "" : "s"}</span>
+      </div>`;
+  }).join("");
+
+  const uncategorizedTile = uncategorized.length ? `
+    <div class="home-box" data-route="#/recipes/uncategorized">
+      ${ICONS.folder}<span>Uncategorized</span>
+      <span class="hint" style="margin:0;">${uncategorized.length} recipe${uncategorized.length === 1 ? "" : "s"}</span>
+    </div>` : "";
+
+  const emptyNote = recipes.length ? "" : `<p class="muted-msg">No recipes saved yet — add your first one below.</p>`;
+
   return `
     ${pageHeader("Recipes")}
     ${syncNote}
-    ${rows}
+    ${emptyNote}
+    <div class="home-grid">
+      ${folderTiles}
+      ${uncategorizedTile}
+    </div>
     <div class="recipe-actions">
       <button class="btn" id="new-recipe-btn">+ New Recipe</button>
     </div>
+  `;
+}
+
+function renderRecipeCategory(categoryKey) {
+  const meta = RECIPE_CATEGORIES.find((c) => c.key === categoryKey);
+  const label = meta ? meta.label : "Uncategorized";
+  const recipes = getRecipes().filter((r) => (meta ? r.category === categoryKey : !r.category));
+  return `
+    ${pageHeader(label, "#/recipes")}
+    ${renderRecipeCardRows(recipes)}
   `;
 }
 
@@ -249,6 +302,17 @@ function renderRecipeForm(id) {
       <div style="margin-top:16px;">
         <label for="recipe-steps">Steps (optional)</label>
         <textarea id="recipe-steps" placeholder="1. Preheat oven...">${existing ? escapeHtml(existing.steps || "") : ""}</textarea>
+      </div>
+
+      <div style="margin-top:16px;">
+        <label>File this recipe under</label>
+        <p class="hint">Pick a folder so it's easy to find later in the Recipes tab. Tap it again to remove it from that folder.</p>
+        <div class="category-pills" id="category-pills">
+          ${RECIPE_CATEGORIES.map((c) => `
+            <button type="button" class="category-pill${existing && existing.category === c.key ? " selected" : ""}" data-category="${c.key}">
+              ${ICONS[c.icon]} ${c.label}
+            </button>`).join("")}
+        </div>
       </div>
 
       <div class="recipe-actions">
@@ -347,6 +411,19 @@ function wireRecipeForm(id) {
     document.getElementById("scan-reminder").style.display = "block";
   });
 
+  // Category pills are a single-select (with tap-to-deselect) — no hidden
+  // <select>, just a class toggle, with the chosen key tracked here.
+  let selectedCategory = existing && existing.category ? existing.category : "";
+  document.querySelectorAll(".category-pill").forEach((pill) => {
+    pill.addEventListener("click", () => {
+      const key = pill.getAttribute("data-category");
+      selectedCategory = selectedCategory === key ? "" : key;
+      document.querySelectorAll(".category-pill").forEach((p) => {
+        p.classList.toggle("selected", p.getAttribute("data-category") === selectedCategory);
+      });
+    });
+  });
+
   const saveBtn = document.getElementById("save-recipe-btn");
   saveBtn.addEventListener("click", async () => {
     const title = document.getElementById("recipe-title").value.trim();
@@ -357,6 +434,7 @@ function wireRecipeForm(id) {
     const recipe = {
       id: existing ? existing.id : newId(),
       title, servings: isNaN(servings) ? 0 : servings, ingredients, steps,
+      category: selectedCategory,
     };
     saveBtn.disabled = true;
     saveBtn.textContent = "Saving…";
@@ -1350,6 +1428,7 @@ function currentRoute() {
   const hash = location.hash || "#/home";
   const parts = hash.split("/");
   if (hash.startsWith("#/recipe/edit/")) return { name: "edit-recipe", id: parts[3] };
+  if (hash.startsWith("#/recipes/")) return { name: "recipe-category", category: parts[2] };
   if (hash.startsWith("#/scale/")) return { name: "scale", id: parts[2] };
   if (hash === "#/scale") return { name: "scale", id: null };
   if (hash.startsWith("#/allergen/")) return { name: "allergen", id: parts[2] };
@@ -1366,6 +1445,8 @@ function render() {
   if (route.name === "edit-recipe") {
     view.innerHTML = renderRecipeForm(route.id);
     wireRecipeForm(route.id);
+  } else if (route.name === "recipe-category") {
+    view.innerHTML = renderRecipeCategory(route.category);
   } else if (route.name === "scale") {
     view.innerHTML = renderScale(route.id);
     wireScale(route.id);
@@ -1399,7 +1480,7 @@ function wireGlobalClicks() {
   const newBtn = document.getElementById("new-recipe-btn");
   if (newBtn) newBtn.addEventListener("click", () => { location.hash = "#/recipe/new"; });
   const backBtn = document.getElementById("back-btn");
-  if (backBtn) backBtn.addEventListener("click", () => { location.hash = "#/home"; });
+  if (backBtn) backBtn.addEventListener("click", () => { location.hash = backBtn.getAttribute("data-back-route") || "#/home"; });
 }
 
 // Re-render the current view when sign-in state changes or cloud recipes
@@ -1422,9 +1503,9 @@ function updateProfileButton() {
 
 window.addEventListener("mg-auth-changed", () => {
   updateProfileButton();
-  refreshIfRelevant(["#/profile", "#/recipes", "scale", "allergen"]);
+  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale", "allergen"]);
 });
-window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "scale", "allergen", "#/profile"]));
+window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "recipe-category", "scale", "allergen", "#/profile"]));
 
 window.addEventListener("hashchange", render);
 window.addEventListener("DOMContentLoaded", () => {
