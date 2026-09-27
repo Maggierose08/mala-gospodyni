@@ -369,3 +369,20 @@ button.btn.danger:hover { background: #93433d; }
   color: var(--muted);
   margin: 18px 4px 8px;
 }
+
+/* ---------- Recipe Creator: grocery checklist ---------- */
+.grocery-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 4px;
+  border-bottom: 1px dashed var(--border);
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 400;
+}
+.grocery-row:last-child { border-bottom: none; }
+.grocery-row input[type=checkbox] {
+  width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--sage);
+}
+.grocery-row.have .grocery-text { text-decoration: line-through; color: var(--muted); }

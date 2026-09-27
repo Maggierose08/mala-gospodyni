@@ -15,6 +15,7 @@ const ICONS = {
   book: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h6v18H6a2 2 0 0 1-2-2V5Z"/><path d="M20 5a2 2 0 0 0-2-2h-6v18h6a2 2 0 0 0 2-2V5Z"/></svg>`,
   swap: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>`,
   camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.3"/></svg>`,
+  wand: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 15 9"/><path d="M17 3v3M22 8h-3M17.5 5.5l-2 2"/><path d="M6 3v3M9 5H6M6.5 3.5l-1 1"/><path d="M19 15v3M21 18h-3"/></svg>`,
 };
 
 // ---------- Storage ----------
@@ -172,6 +173,7 @@ function renderHome() {
       <div class="home-box blush" data-route="#/scale">${ICONS.scale}<span>Scale Converter</span></div>
       <div class="home-box butter" data-route="#/allergen">${ICONS.leaf}<span>Allergen Checker</span></div>
       <div class="home-box" data-route="#/temp">${ICONS.thermo}<span>Temperature Converter</span></div>
+      <div class="home-box blush" data-route="#/create">${ICONS.wand}<span>Recipe Creator</span></div>
     </div>
     <div class="quick-links">
       <div class="quick-link" data-route="#/community">${ICONS.book} Community Recipes</div>
@@ -823,6 +825,157 @@ function wireTemp() {
   });
 }
 
+// ---------- View: Recipe Creator ----------
+// Turns a free-text request into a real recipe + grocery list, matched
+// against RECIPE_TEMPLATES (logic.js) rather than an outside AI service —
+// see the comment above RECIPE_TEMPLATES for why. Kept as module-level
+// state (like profileMode below) so the generated recipe survives re-wiring
+// but not a full navigation away from the page.
+let lastGeneratedRecipe = null;
+
+function renderRecipeCreator() {
+  return `
+    ${pageHeader("Recipe Creator")}
+    <div class="card">
+      <h2>What would you like to make?</h2>
+      <p class="hint">Describe what you're after — a protein, cuisine, meal type, how many people, any dietary needs, how much time you have. For example: "a quick vegetarian pasta for 4" or "gluten-free dinner for 6".</p>
+      <div class="field" style="margin-bottom:12px;">
+        <label for="recipe-request">Your request</label>
+        <textarea id="recipe-request" placeholder="e.g. a quick chicken dinner for 4, dairy-free"></textarea>
+      </div>
+      <div class="row-flex">
+        <div class="field" style="min-width:200px;">
+          <label for="recipe-request-servings">Servings (optional)</label>
+          <input type="number" id="recipe-request-servings" min="1" step="1" placeholder="uses your request, or the recipe's default">
+        </div>
+      </div>
+      <div class="recipe-actions">
+        <button class="btn" id="generate-recipe-btn">Create Recipe</button>
+      </div>
+      <p class="hint" style="margin-top:10px;">
+        This matches your request against a library of real recipes built into the app — not an outside AI — and scales the closest one to your servings. That keeps it free and working offline, but it won't always be a perfect fit for an unusual request.
+      </p>
+    </div>
+    <div class="card" id="generated-recipe-card" style="display:none;">
+      <h2 id="generated-recipe-title"></h2>
+      <p class="hint" id="generated-recipe-meta"></p>
+      <div id="generated-recipe-notes"></div>
+
+      <label>Grocery list</label>
+      <p class="hint">Check off anything you already have on hand — what's left is what to buy.</p>
+      <div id="grocery-list"></div>
+
+      <div style="margin-top:16px;">
+        <label>Steps</label>
+        <ol id="generated-recipe-steps" style="padding-left:20px; font-size:0.95rem;"></ol>
+      </div>
+
+      <div class="recipe-actions">
+        <button class="btn" id="save-generated-recipe-btn">Save this recipe</button>
+        <button class="btn secondary" id="try-another-btn">Try another idea</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderGroceryList(ingredients) {
+  return ingredients.map((item, idx) => {
+    const qtyText = item.qty == null ? "" : `${fmtNum(item.qty)} `;
+    const unitText = item.unit ? `${item.unit} ` : "";
+    return `
+      <label class="grocery-row" for="grocery-${idx}">
+        <input type="checkbox" id="grocery-${idx}" class="grocery-chk">
+        <span class="grocery-text">${escapeHtml(qtyText + unitText + item.name)}</span>
+      </label>
+    `;
+  }).join("");
+}
+
+function wireRecipeCreator() {
+  const requestInput = document.getElementById("recipe-request");
+  const servingsInput = document.getElementById("recipe-request-servings");
+  const generateBtn = document.getElementById("generate-recipe-btn");
+  const resultCard = document.getElementById("generated-recipe-card");
+  const titleEl = document.getElementById("generated-recipe-title");
+  const metaEl = document.getElementById("generated-recipe-meta");
+  const notesEl = document.getElementById("generated-recipe-notes");
+  const groceryEl = document.getElementById("grocery-list");
+  const stepsEl = document.getElementById("generated-recipe-steps");
+  const saveBtn = document.getElementById("save-generated-recipe-btn");
+  const tryAnotherBtn = document.getElementById("try-another-btn");
+
+  function generate() {
+    const request = requestInput.value.trim();
+    if (!request) { alert("Tell me a little about what you'd like to make first."); return; }
+    const servingsVal = parseFloat(servingsInput.value);
+    const recipe = generateRecipe(request, isNaN(servingsVal) ? null : servingsVal);
+    lastGeneratedRecipe = recipe;
+
+    titleEl.textContent = recipe.title;
+    metaEl.textContent = `${fmtNum(recipe.servings)} servings · about ${recipe.timeMinutes} minutes`;
+
+    let notesHtml = "";
+    if (!recipe.matchedWell) {
+      notesHtml += `<p class="hint">I didn't find a close match for that exact request, so here's a recipe from the library you might like instead — try naming a protein, cuisine, or meal type for a closer match next time.</p>`;
+    }
+    if (recipe.requestedDietary.length && !recipe.dietaryHonored) {
+      notesHtml += `<div class="disclaimer">I couldn't find a recipe in the library that's fully ${recipe.requestedDietary.join(" + ")} for this request — please double-check the ingredients below before making this.</div>`;
+    }
+    notesEl.innerHTML = notesHtml;
+
+    groceryEl.innerHTML = renderGroceryList(recipe.ingredients);
+    groceryEl.querySelectorAll(".grocery-chk").forEach((chk) => {
+      chk.addEventListener("change", () => {
+        chk.closest(".grocery-row").classList.toggle("have", chk.checked);
+      });
+    });
+
+    stepsEl.innerHTML = recipe.steps
+      .map((s) => `<li style="margin-bottom:6px;">${escapeHtml(s)}</li>`)
+      .join("");
+
+    resultCard.style.display = "block";
+    if (resultCard.scrollIntoView) resultCard.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  generateBtn.addEventListener("click", generate);
+
+  saveBtn.addEventListener("click", async () => {
+    if (!lastGeneratedRecipe) return;
+    const g = lastGeneratedRecipe;
+    const recipe = {
+      id: newId(),
+      title: g.title,
+      servings: g.servings,
+      ingredients: g.ingredients.map((i) => ({ qty: i.qty, unit: i.unit, name: i.name })),
+      steps: g.steps.map((s, idx) => `${idx + 1}. ${s}`).join("\n"),
+    };
+    saveBtn.disabled = true;
+    saveBtn.textContent = "Saving…";
+    try {
+      await upsertRecipe(recipe);
+      saveBtn.textContent = "Saved!";
+      setTimeout(() => {
+        saveBtn.disabled = false;
+        saveBtn.textContent = "Save this recipe";
+      }, 1500);
+    } catch (err) {
+      console.error("Could not save recipe", err);
+      alert("Sorry, that recipe couldn't be saved: " + (err.message || err));
+      saveBtn.disabled = false;
+      saveBtn.textContent = "Save this recipe";
+    }
+  });
+
+  tryAnotherBtn.addEventListener("click", () => {
+    resultCard.style.display = "none";
+    lastGeneratedRecipe = null;
+    requestInput.value = "";
+    servingsInput.value = "";
+    requestInput.focus();
+  });
+}
+
 // ---------- View: Profile (Phase 2 — accounts & sync) ----------
 let profileMode = "signin"; // "signin" | "signup" — remembers which tab was showing across re-renders
 let profileError = "";
@@ -1188,6 +1341,7 @@ const routes = {
   "#/friends": { render: () => renderStub("Friends & Family", "sharing recipes with friends and family is coming in a future update, now that accounts are in place.") },
   "#/settings": { render: () => renderStub("Settings", "unit system and theme are coming in a later phase — for now the app uses US customary units and light mode.") },
   "#/profile": { render: renderProfile, wire: wireProfile },
+  "#/create": { render: renderRecipeCreator, wire: wireRecipeCreator },
   "#/community": { render: () => renderStub("Community Recipes", "this arrives in Phase 3, alongside moderation and the premium tier.") },
   "#/substitutions": { render: () => renderStub("Substitution Tips", "this arrives in Phase 3, alongside moderation and the premium tier.") },
 };

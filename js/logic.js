@@ -233,6 +233,485 @@ const POPULAR_CONVERSIONS = [
 ];
 
 // ============================================================
+// Recipe Creator — turns a free-text request ("chicken dinner for 4,
+// gluten-free, under 30 minutes") into a real, cookable recipe plus its
+// grocery list.
+//
+// This is a deliberately honest design choice, not a corner cut: rather
+// than call an outside AI service (which would need a paid backend and a
+// per-request cost that isn't guaranteed to stay at $0), this matches the
+// request against a hand-written library of real recipes and scales the
+// best match to the servings asked for — same spirit as everything else in
+// the app, fully free and fully offline. It's more limited than open-ended
+// AI (it can only ever suggest what's in RECIPE_TEMPLATES below), which is
+// why generateRecipe() reports how well the match actually fit instead of
+// pretending every result is a perfect, purpose-built recipe.
+// ============================================================
+
+const RECIPE_TEMPLATES = [
+  {
+    id: "chicken-stir-fry", title: "Chicken & Vegetable Stir-Fry", servings: 4, timeMinutes: 25,
+    tags: ["chicken", "stir-fry", "dinner", "quick", "easy", "asian", "rice", "weeknight"],
+    dietary: ["dairy-free", "nut-free"],
+    ingredients: [
+      { qty: 1, unit: "lb", name: "chicken breast, thinly sliced" },
+      { qty: 2, unit: "cup", name: "broccoli florets" },
+      { qty: 1, unit: "", name: "red bell pepper, sliced" },
+      { qty: 2, unit: "", name: "garlic cloves, minced" },
+      { qty: 1, unit: "tsp", name: "fresh ginger, grated" },
+      { qty: 3, unit: "tbsp", name: "soy sauce" },
+      { qty: 1, unit: "tbsp", name: "vegetable oil" },
+      { qty: 2, unit: "cup", name: "cooked rice" },
+    ],
+    steps: [
+      "Heat oil in a large skillet or wok over medium-high heat.",
+      "Add chicken and cook until browned, about 5-6 minutes, then remove and set aside.",
+      "Add garlic and ginger to the pan and cook 30 seconds until fragrant.",
+      "Add broccoli and bell pepper; stir-fry 3-4 minutes until crisp-tender.",
+      "Return the chicken to the pan, add soy sauce, and toss to combine and heat through.",
+      "Serve over the cooked rice.",
+    ],
+  },
+  {
+    id: "beef-tacos", title: "Beef Tacos", servings: 4, timeMinutes: 25,
+    tags: ["beef", "tacos", "dinner", "quick", "easy", "mexican", "weeknight"],
+    dietary: ["gluten-free", "nut-free"],
+    ingredients: [
+      { qty: 1, unit: "lb", name: "ground beef" },
+      { qty: 1, unit: "tbsp", name: "taco seasoning" },
+      { qty: 8, unit: "", name: "corn tortillas" },
+      { qty: 1, unit: "cup", name: "shredded lettuce" },
+      { qty: 1, unit: "cup", name: "diced tomato" },
+      { qty: 1, unit: "cup", name: "shredded cheddar cheese" },
+      { qty: 0.5, unit: "cup", name: "sour cream" },
+    ],
+    steps: [
+      "Brown the ground beef in a skillet over medium heat, breaking it up as it cooks.",
+      "Stir in the taco seasoning and a splash of water; simmer 2-3 minutes.",
+      "Warm the tortillas in a dry pan or the microwave.",
+      "Fill each tortilla with beef, lettuce, tomato, cheese, and sour cream.",
+    ],
+  },
+  {
+    id: "veggie-pasta-primavera", title: "Vegetable Pasta Primavera", servings: 4, timeMinutes: 30,
+    tags: ["pasta", "vegetarian", "dinner", "quick", "easy", "italian"],
+    dietary: ["vegetarian", "nut-free"],
+    ingredients: [
+      { qty: 12, unit: "oz", name: "pasta" },
+      { qty: 1, unit: "cup", name: "cherry tomatoes, halved" },
+      { qty: 1, unit: "cup", name: "zucchini, sliced" },
+      { qty: 1, unit: "cup", name: "bell pepper, sliced" },
+      { qty: 2, unit: "tbsp", name: "olive oil" },
+      { qty: 2, unit: "", name: "garlic cloves, minced" },
+      { qty: 0.5, unit: "cup", name: "grated parmesan cheese" },
+      { qty: 0.25, unit: "cup", name: "fresh basil, chopped" },
+    ],
+    steps: [
+      "Cook the pasta in salted water according to package directions; reserve 1/2 cup pasta water, then drain.",
+      "While the pasta cooks, heat olive oil in a large skillet over medium heat.",
+      "Add garlic, zucchini, and bell pepper; cook 4-5 minutes until just tender.",
+      "Add cherry tomatoes and cook 2 more minutes until they begin to soften.",
+      "Toss in the drained pasta and a splash of the reserved pasta water; top with parmesan and basil.",
+    ],
+  },
+  {
+    id: "baked-salmon-veg", title: "Baked Salmon with Roasted Vegetables", servings: 4, timeMinutes: 35,
+    tags: ["salmon", "seafood", "fish", "dinner", "healthy", "pescatarian"],
+    dietary: ["gluten-free", "dairy-free", "nut-free"],
+    ingredients: [
+      { qty: 4, unit: "", name: "salmon fillets (about 6 oz each)" },
+      { qty: 2, unit: "cup", name: "broccoli florets" },
+      { qty: 2, unit: "cup", name: "baby carrots" },
+      { qty: 2, unit: "tbsp", name: "olive oil" },
+      { qty: 1, unit: "", name: "lemon, sliced" },
+      { qty: 1, unit: "tsp", name: "garlic powder" },
+      { qty: 0.5, unit: "tsp", name: "salt" },
+    ],
+    steps: [
+      "Preheat the oven to 400°F (200°C).",
+      "Toss the broccoli and carrots with half the olive oil, garlic powder, and salt on a sheet pan.",
+      "Roast 10 minutes, then push the vegetables to one side and add the salmon, drizzled with the rest of the oil and topped with lemon slices.",
+      "Bake 12-15 minutes more, until the salmon flakes easily with a fork.",
+    ],
+  },
+  {
+    id: "vegetarian-chili", title: "Vegetarian Chili", servings: 6, timeMinutes: 40,
+    tags: ["chili", "vegetarian", "vegan", "dinner", "beans", "healthy"],
+    dietary: ["vegetarian", "vegan", "gluten-free", "dairy-free", "nut-free"],
+    ingredients: [
+      { qty: 1, unit: "tbsp", name: "olive oil" },
+      { qty: 1, unit: "", name: "onion, diced" },
+      { qty: 2, unit: "", name: "garlic cloves, minced" },
+      { qty: 2, unit: "cup", name: "canned kidney beans, drained" },
+      { qty: 2, unit: "cup", name: "canned black beans, drained" },
+      { qty: 1, unit: "cup", name: "canned corn" },
+      { qty: 3, unit: "cup", name: "canned diced tomatoes" },
+      { qty: 2, unit: "tbsp", name: "chili powder" },
+      { qty: 1, unit: "tsp", name: "ground cumin" },
+    ],
+    steps: [
+      "Heat olive oil in a large pot over medium heat and sauté the onion until soft, about 5 minutes.",
+      "Add garlic and cook 1 minute more.",
+      "Stir in the beans, corn, tomatoes, chili powder, and cumin.",
+      "Bring to a simmer and cook uncovered 20-25 minutes, stirring occasionally, until thickened.",
+    ],
+  },
+  {
+    id: "classic-beef-chili", title: "Classic Beef Chili", servings: 6, timeMinutes: 45,
+    tags: ["chili", "beef", "dinner", "hearty"],
+    dietary: ["gluten-free", "nut-free"],
+    ingredients: [
+      { qty: 1.5, unit: "lb", name: "ground beef" },
+      { qty: 1, unit: "", name: "onion, diced" },
+      { qty: 2, unit: "", name: "garlic cloves, minced" },
+      { qty: 2, unit: "cup", name: "canned kidney beans, drained" },
+      { qty: 3, unit: "cup", name: "canned diced tomatoes" },
+      { qty: 2, unit: "tbsp", name: "chili powder" },
+      { qty: 1, unit: "tsp", name: "ground cumin" },
+      { qty: 1, unit: "cup", name: "shredded cheddar cheese, for topping" },
+    ],
+    steps: [
+      "Brown the ground beef with the onion in a large pot over medium heat; drain excess fat.",
+      "Add garlic and cook 1 minute more.",
+      "Stir in the beans, tomatoes, chili powder, and cumin.",
+      "Simmer uncovered 25-30 minutes, stirring occasionally. Serve topped with cheddar.",
+    ],
+  },
+  {
+    id: "classic-pancakes", title: "Classic Buttermilk Pancakes", servings: 4, timeMinutes: 20,
+    tags: ["pancakes", "breakfast", "vegetarian", "quick", "easy", "sweet"],
+    dietary: ["vegetarian", "nut-free"],
+    ingredients: [
+      { qty: 2, unit: "cup", name: "all-purpose flour" },
+      { qty: 2, unit: "tbsp", name: "sugar" },
+      { qty: 2, unit: "tsp", name: "baking powder" },
+      { qty: 0.5, unit: "tsp", name: "baking soda" },
+      { qty: 0.5, unit: "tsp", name: "salt" },
+      { qty: 2, unit: "cup", name: "buttermilk" },
+      { qty: 2, unit: "", name: "eggs" },
+      { qty: 0.25, unit: "cup", name: "butter, melted" },
+    ],
+    steps: [
+      "Whisk together flour, sugar, baking powder, baking soda, and salt in a large bowl.",
+      "In a separate bowl, whisk the buttermilk, eggs, and melted butter.",
+      "Pour the wet ingredients into the dry and stir just until combined (a few lumps are fine).",
+      "Cook 1/4-cup portions on a hot, lightly greased griddle until bubbles form, then flip and cook until golden.",
+    ],
+  },
+  {
+    id: "veggie-omelet", title: "Veggie Omelet", servings: 2, timeMinutes: 15,
+    tags: ["omelet", "eggs", "breakfast", "vegetarian", "quick", "easy", "gluten-free"],
+    dietary: ["vegetarian", "gluten-free", "nut-free"],
+    ingredients: [
+      { qty: 4, unit: "", name: "eggs" },
+      { qty: 0.25, unit: "cup", name: "bell pepper, diced" },
+      { qty: 0.25, unit: "cup", name: "onion, diced" },
+      { qty: 0.25, unit: "cup", name: "spinach, chopped" },
+      { qty: 0.25, unit: "cup", name: "shredded cheddar cheese" },
+      { qty: 1, unit: "tbsp", name: "butter" },
+      { qty: 0.25, unit: "tsp", name: "salt" },
+    ],
+    steps: [
+      "Whisk the eggs with salt in a bowl.",
+      "Melt butter in a nonstick skillet over medium heat and sauté the pepper and onion 2-3 minutes.",
+      "Add the spinach and cook until just wilted.",
+      "Pour in the eggs, let set slightly, then sprinkle with cheese and fold in half once mostly set.",
+    ],
+  },
+  {
+    id: "overnight-oats", title: "Overnight Oats", servings: 2, timeMinutes: 10,
+    tags: ["oats", "breakfast", "vegan", "vegetarian", "healthy", "make-ahead", "no-cook", "quick", "easy"],
+    dietary: ["vegetarian", "vegan", "dairy-free", "nut-free", "gluten-free"],
+    ingredients: [
+      { qty: 1, unit: "cup", name: "rolled oats (certified gluten-free if needed)" },
+      { qty: 1, unit: "cup", name: "unsweetened oat milk" },
+      { qty: 2, unit: "tbsp", name: "chia seeds" },
+      { qty: 2, unit: "tbsp", name: "maple syrup" },
+      { qty: 1, unit: "cup", name: "mixed berries" },
+    ],
+    steps: [
+      "Stir together the oats, oat milk, chia seeds, and maple syrup in a jar or container.",
+      "Cover and refrigerate at least 4 hours, or overnight.",
+      "Top with mixed berries just before eating.",
+    ],
+  },
+  {
+    id: "grilled-cheese-tomato-soup", title: "Grilled Cheese & Tomato Soup", servings: 4, timeMinutes: 25,
+    tags: ["grilled cheese", "soup", "tomato", "lunch", "comfort food", "vegetarian"],
+    dietary: ["vegetarian", "nut-free"],
+    ingredients: [
+      { qty: 8, unit: "", name: "bread slices" },
+      { qty: 8, unit: "", name: "cheddar cheese slices" },
+      { qty: 2, unit: "tbsp", name: "butter, softened" },
+      { qty: 4, unit: "cup", name: "canned crushed tomatoes" },
+      { qty: 1, unit: "cup", name: "vegetable broth" },
+      { qty: 0.5, unit: "cup", name: "heavy cream" },
+      { qty: 1, unit: "tsp", name: "dried basil" },
+    ],
+    steps: [
+      "Simmer the crushed tomatoes, broth, and basil in a pot over medium heat for 15 minutes, then stir in the cream.",
+      "Meanwhile, butter the bread and assemble sandwiches with the cheese slices.",
+      "Cook the sandwiches in a skillet over medium heat, 3-4 minutes per side, until golden and the cheese melts.",
+      "Serve the grilled cheese alongside the soup.",
+    ],
+  },
+  {
+    id: "chicken-caesar-salad", title: "Chicken Caesar Salad", servings: 4, timeMinutes: 25,
+    tags: ["chicken", "salad", "lunch", "caesar", "quick", "easy"],
+    dietary: ["nut-free"],
+    ingredients: [
+      { qty: 1, unit: "lb", name: "chicken breast" },
+      { qty: 8, unit: "cup", name: "romaine lettuce, chopped" },
+      { qty: 0.5, unit: "cup", name: "caesar dressing" },
+      { qty: 0.5, unit: "cup", name: "grated parmesan cheese" },
+      { qty: 1, unit: "cup", name: "croutons" },
+    ],
+    steps: [
+      "Season the chicken and cook in a skillet over medium heat, about 6-7 minutes per side, until cooked through; let rest, then slice.",
+      "Toss the romaine with the caesar dressing.",
+      "Top with the sliced chicken, parmesan, and croutons.",
+    ],
+  },
+  {
+    id: "shrimp-scampi", title: "Shrimp Scampi with Linguine", servings: 4, timeMinutes: 25,
+    tags: ["shrimp", "seafood", "pasta", "dinner", "quick", "italian", "pescatarian"],
+    dietary: ["nut-free"],
+    ingredients: [
+      { qty: 12, unit: "oz", name: "linguine" },
+      { qty: 1, unit: "lb", name: "shrimp, peeled and deveined" },
+      { qty: 4, unit: "tbsp", name: "butter" },
+      { qty: 3, unit: "tbsp", name: "olive oil" },
+      { qty: 4, unit: "", name: "garlic cloves, minced" },
+      { qty: 0.5, unit: "cup", name: "dry white wine or broth" },
+      { qty: 2, unit: "tbsp", name: "lemon juice" },
+      { qty: 0.25, unit: "cup", name: "fresh parsley, chopped" },
+    ],
+    steps: [
+      "Cook the linguine in salted water according to package directions; drain.",
+      "Heat butter and olive oil in a large skillet over medium heat; add garlic and cook 30 seconds.",
+      "Add shrimp and cook 2 minutes per side until pink, then remove.",
+      "Add wine (or broth) and lemon juice to the pan, simmer 2 minutes, then return the shrimp and toss with the pasta and parsley.",
+    ],
+  },
+  {
+    id: "turkey-meatballs-marinara", title: "Turkey Meatballs with Marinara", servings: 4, timeMinutes: 40,
+    tags: ["turkey", "meatballs", "pasta", "dinner", "italian"],
+    dietary: ["nut-free"],
+    ingredients: [
+      { qty: 1, unit: "lb", name: "ground turkey" },
+      { qty: 0.5, unit: "cup", name: "breadcrumbs" },
+      { qty: 1, unit: "", name: "egg" },
+      { qty: 0.25, unit: "cup", name: "grated parmesan cheese" },
+      { qty: 2, unit: "", name: "garlic cloves, minced" },
+      { qty: 3, unit: "cup", name: "marinara sauce" },
+      { qty: 12, unit: "oz", name: "spaghetti" },
+    ],
+    steps: [
+      "Preheat the oven to 400°F (200°C). Mix turkey, breadcrumbs, egg, parmesan, and garlic; form into 1.5-inch meatballs.",
+      "Bake the meatballs on a lined sheet pan 18-20 minutes, until cooked through.",
+      "Meanwhile, cook the spaghetti according to package directions and warm the marinara sauce.",
+      "Add the meatballs to the sauce and serve over the spaghetti.",
+    ],
+  },
+  {
+    id: "vegetable-fried-rice", title: "Vegetable Fried Rice", servings: 4, timeMinutes: 20,
+    tags: ["fried rice", "vegetarian", "vegan", "dinner", "quick", "easy", "asian", "weeknight"],
+    dietary: ["vegetarian", "vegan", "dairy-free", "nut-free"],
+    ingredients: [
+      { qty: 3, unit: "cup", name: "cooked rice, cold (day-old works best)" },
+      { qty: 1, unit: "cup", name: "frozen peas and carrots" },
+      { qty: 1, unit: "", name: "onion, diced" },
+      { qty: 2, unit: "", name: "garlic cloves, minced" },
+      { qty: 3, unit: "tbsp", name: "soy sauce" },
+      { qty: 2, unit: "tbsp", name: "vegetable oil" },
+      { qty: 2, unit: "", name: "green onions, sliced" },
+    ],
+    steps: [
+      "Heat oil in a large skillet or wok over medium-high heat.",
+      "Add onion and garlic, cook 2 minutes, then add the peas and carrots and cook 2 minutes more.",
+      "Add the cold rice, breaking up clumps, and stir-fry 4-5 minutes.",
+      "Stir in the soy sauce and green onions and toss to combine.",
+    ],
+  },
+  {
+    id: "banana-bread", title: "Banana Bread", servings: 8, timeMinutes: 65,
+    tags: ["banana bread", "dessert", "snack", "baking", "vegetarian", "sweet"],
+    dietary: ["vegetarian", "nut-free"],
+    ingredients: [
+      { qty: 3, unit: "", name: "ripe bananas, mashed" },
+      { qty: 0.33, unit: "cup", name: "butter, melted" },
+      { qty: 0.75, unit: "cup", name: "sugar" },
+      { qty: 1, unit: "", name: "egg" },
+      { qty: 1, unit: "tsp", name: "vanilla extract" },
+      { qty: 1, unit: "tsp", name: "baking soda" },
+      { qty: 0.25, unit: "tsp", name: "salt" },
+      { qty: 1.5, unit: "cup", name: "all-purpose flour" },
+    ],
+    steps: [
+      "Preheat the oven to 350°F (175°C) and grease a loaf pan.",
+      "Mix the mashed bananas with the melted butter, then stir in sugar, egg, and vanilla.",
+      "Sprinkle the baking soda and salt over the mixture and stir in, then fold in the flour just until combined.",
+      "Pour into the loaf pan and bake 55-65 minutes, until a toothpick comes out clean.",
+    ],
+  },
+  {
+    id: "chocolate-chip-cookies", title: "Chocolate Chip Cookies", servings: 24, timeMinutes: 30,
+    tags: ["cookies", "dessert", "chocolate", "baking", "vegetarian", "sweet"],
+    dietary: ["vegetarian", "nut-free"],
+    ingredients: [
+      { qty: 2.25, unit: "cup", name: "all-purpose flour" },
+      { qty: 1, unit: "tsp", name: "baking soda" },
+      { qty: 1, unit: "tsp", name: "salt" },
+      { qty: 1, unit: "cup", name: "butter, softened" },
+      { qty: 0.75, unit: "cup", name: "sugar" },
+      { qty: 0.75, unit: "cup", name: "brown sugar" },
+      { qty: 2, unit: "", name: "eggs" },
+      { qty: 1, unit: "tsp", name: "vanilla extract" },
+      { qty: 2, unit: "cup", name: "chocolate chips" },
+    ],
+    steps: [
+      "Preheat the oven to 375°F (190°C).",
+      "Whisk together the flour, baking soda, and salt.",
+      "Cream the butter with both sugars until fluffy, then beat in the eggs and vanilla.",
+      "Stir in the flour mixture just until combined, then fold in the chocolate chips.",
+      "Drop rounded tablespoons onto a lined sheet pan and bake 9-11 minutes, until edges are golden.",
+    ],
+  },
+  {
+    id: "lentil-soup", title: "Lentil Soup", servings: 6, timeMinutes: 40,
+    tags: ["lentil", "soup", "vegan", "vegetarian", "healthy", "dinner", "lunch"],
+    dietary: ["vegetarian", "vegan", "gluten-free", "dairy-free", "nut-free"],
+    ingredients: [
+      { qty: 1, unit: "tbsp", name: "olive oil" },
+      { qty: 1, unit: "", name: "onion, diced" },
+      { qty: 2, unit: "", name: "carrots, diced" },
+      { qty: 2, unit: "", name: "celery stalks, diced" },
+      { qty: 2, unit: "", name: "garlic cloves, minced" },
+      { qty: 1.5, unit: "cup", name: "dried lentils, rinsed" },
+      { qty: 6, unit: "cup", name: "vegetable broth" },
+      { qty: 1, unit: "cup", name: "canned diced tomatoes" },
+      { qty: 1, unit: "tsp", name: "ground cumin" },
+      { qty: 1, unit: "tsp", name: "smoked paprika" },
+    ],
+    steps: [
+      "Heat olive oil in a large pot over medium heat and sauté the onion, carrots, and celery 5-6 minutes.",
+      "Add garlic and cook 1 minute more.",
+      "Stir in the lentils, broth, tomatoes, cumin, and paprika.",
+      "Bring to a boil, then reduce heat and simmer 25-30 minutes, until the lentils are tender.",
+    ],
+  },
+];
+
+// Recognizes dietary needs mentioned in a free-text request. Only phrases
+// that clearly name the restriction count — this deliberately doesn't try
+// to infer "healthy" or "light" as a dietary filter, since those are too
+// vague to safely exclude recipes on.
+const DIETARY_KEYWORDS = {
+  vegetarian: ["vegetarian"],
+  vegan: ["vegan"],
+  "gluten-free": ["gluten free", "gluten-free", "glutenfree"],
+  "dairy-free": ["dairy free", "dairy-free", "dairyfree", "lactose free", "lactose-free"],
+  "nut-free": ["nut free", "nut-free", "nutfree"],
+};
+
+function detectDietaryFilters(text) {
+  const found = [];
+  for (const key of Object.keys(DIETARY_KEYWORDS)) {
+    if (DIETARY_KEYWORDS[key].some((p) => text.includes(p))) found.push(key);
+  }
+  return found;
+}
+
+// Looks for "for 4", "serves 6", "6 people", "4 servings" in the request.
+function parseServingsFromRequest(text) {
+  const t = (text || "").toLowerCase();
+  let m = t.match(/for\s+(\d+)(?:\s*(?:people|servings))?/);
+  if (!m) m = t.match(/serves\s+(\d+)/);
+  if (!m) m = t.match(/(\d+)\s*(?:people|servings|guests)/);
+  if (!m) m = t.match(/(?:party|group|crowd)\s+of\s+(\d+)/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (!isNaN(n) && n > 0) return n;
+  }
+  return null;
+}
+
+// Ranks every template against the request text. Dietary needs are treated
+// as a hard filter (a stated restriction should never be silently ignored)
+// unless every template would be excluded, in which case the caller is told
+// via `dietaryOk` on the top result rather than getting an empty result.
+function matchRecipeTemplates(requestText) {
+  const text = (requestText || "").toLowerCase();
+  const words = text.split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  const dietaryFilters = detectDietaryFilters(text);
+
+  let pool = RECIPE_TEMPLATES;
+  if (dietaryFilters.length) {
+    const filtered = RECIPE_TEMPLATES.filter((t) => dietaryFilters.every((d) => t.dietary.includes(d)));
+    if (filtered.length) pool = filtered;
+  }
+
+  const timeMatch = text.match(/(\d+)\s*min/);
+  const wantsQuick = /\bquick\b|\bfast\b|\beasy\b|\bweeknight\b/.test(text);
+  const maxMinutes = timeMatch ? parseInt(timeMatch[1], 10) : (wantsQuick ? 30 : null);
+
+  // Meal-type words matter more than an incidental ingredient-name match
+  // (e.g. a parenthetical aside shouldn't outweigh "dinner" actually being
+  // in a recipe's own tags), so they're weighted higher. Parenthetical
+  // asides in ingredient names (like "certified gluten-free if needed")
+  // are notes for the cook, not searchable keywords, so they're stripped
+  // before matching.
+  const MEAL_WORDS = ["breakfast", "lunch", "dinner", "dessert", "snack", "brunch"];
+  function score(t) {
+    let s = 0;
+    const haystack = [t.title, ...t.tags, ...t.ingredients.map((i) => i.name.replace(/\([^)]*\)/g, ""))]
+      .join(" ").toLowerCase();
+    for (const w of words) {
+      if (!haystack.includes(w)) continue;
+      s += MEAL_WORDS.includes(w) ? 2 : 1;
+    }
+    if (maxMinutes != null && t.timeMinutes <= maxMinutes) s += 1;
+    return s;
+  }
+
+  return pool
+    .map((t) => ({ template: t, score: score(t), dietaryOk: dietaryFilters.every((d) => t.dietary.includes(d)) }))
+    .sort((a, b) => b.score - a.score);
+}
+
+// Builds a real recipe (title, scaled ingredients, steps) from a free-text
+// request. `matchedWell` and `dietaryHonored` are reported honestly so the
+// UI can say plainly when a request didn't have a close match, rather than
+// implying every result was purpose-built.
+function generateRecipe(requestText, desiredServings) {
+  const ranked = matchRecipeTemplates(requestText);
+  const top = ranked[0];
+  const template = top.template;
+  const requestedServings = parseServingsFromRequest(requestText);
+  const servings = (desiredServings && desiredServings > 0) ? desiredServings
+    : (requestedServings && requestedServings > 0) ? requestedServings
+    : template.servings;
+  const ingredients = template.ingredients.map((i) => ({
+    qty: i.qty == null ? null : scaleQty(i.qty, template.servings, servings),
+    unit: i.unit,
+    name: i.name,
+  }));
+  return {
+    id: template.id,
+    title: template.title,
+    servings,
+    baseServings: template.servings,
+    timeMinutes: template.timeMinutes,
+    dietary: template.dietary,
+    ingredients,
+    steps: template.steps,
+    matchedWell: top.score > 0,
+    dietaryHonored: top.dietaryOk,
+    requestedDietary: detectDietaryFilters((requestText || "").toLowerCase()),
+  };
+}
+
+// ============================================================
 // Scan a Recipe — turning raw OCR text into recipe form fields.
 //
 // This is a best-effort heuristic, not a guarantee: it's the reason every
@@ -329,5 +808,6 @@ if (typeof module !== "undefined" && module.exports) {
     VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, POPULAR_CONVERSIONS, OVEN_TYPES, ALLERGEN_MAP,
     findDensity, convertUnit, scaleQty, fToC, cToF, altitudeAdjustment, checkAllergens, fmtNum,
     parseOcrText,
+    RECIPE_TEMPLATES, detectDietaryFilters, parseServingsFromRequest, matchRecipeTemplates, generateRecipe,
   };
 }

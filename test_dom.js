@@ -40,7 +40,7 @@ async function main() {
   // ---- Home screen ----
   go("#/home");
   const homeBoxes = window.document.querySelectorAll(".home-box");
-  assert(homeBoxes.length === 4, "home screen shows 4 boxes, got " + homeBoxes.length);
+  assert(homeBoxes.length === 5, "home screen shows 5 boxes, got " + homeBoxes.length);
   assert(window.document.querySelectorAll(".quick-link").length === 2, "home screen shows 2 quick links");
 
   // ---- Recipes list (empty) ----
@@ -186,6 +186,44 @@ async function main() {
   elevInput.dispatchEvent(new window.Event("input"));
   assert(/oven temperature/.test(window.document.getElementById("altitude-result").textContent), "altitude adjustment shows guidance at 6000ft");
 
+  // ---- Recipe Creator ----
+  go("#/create");
+  assert(!!window.document.getElementById("recipe-request"), "recipe creator shows a request field");
+  assert(window.document.getElementById("generated-recipe-card").style.display === "none", "generated recipe card starts hidden until a recipe is created");
+
+  window.document.getElementById("recipe-request").value = "quick vegetarian pasta dinner for 6";
+  window.document.getElementById("generate-recipe-btn").click();
+  assert(window.document.getElementById("generated-recipe-card").style.display === "block", "generated recipe card shows after clicking Create Recipe");
+  assert(/Pasta Primavera/i.test(window.document.getElementById("generated-recipe-title").textContent), "matches a vegetarian pasta recipe for that request, got: " + window.document.getElementById("generated-recipe-title").textContent);
+  assert(/6 servings/.test(window.document.getElementById("generated-recipe-meta").textContent), "scales to the 6 servings requested, got: " + window.document.getElementById("generated-recipe-meta").textContent);
+
+  const groceryRows = window.document.querySelectorAll("#grocery-list .grocery-row");
+  assert(groceryRows.length > 0, "grocery list shows a row per ingredient");
+  const firstGroceryChk = groceryRows[0].querySelector(".grocery-chk");
+  firstGroceryChk.checked = true;
+  firstGroceryChk.dispatchEvent(new window.Event("change"));
+  assert(groceryRows[0].classList.contains("have"), "checking a grocery item marks it as already-have");
+
+  const stepItems = window.document.querySelectorAll("#generated-recipe-steps li");
+  assert(stepItems.length > 0, "generated recipe shows its cooking steps");
+
+  const recipesBefore = JSON.parse(window.localStorage.getItem("mg_recipes_v1") || "[]");
+  window.document.getElementById("save-generated-recipe-btn").click();
+  await flush();
+  const recipesAfter = JSON.parse(window.localStorage.getItem("mg_recipes_v1") || "[]");
+  assert(recipesAfter.length === recipesBefore.length + 1, "saving the generated recipe adds it to My Recipes");
+  assert(/Pasta Primavera/i.test(recipesAfter[recipesAfter.length - 1].title), "the saved recipe is the generated one");
+
+  window.document.getElementById("try-another-btn").click();
+  assert(window.document.getElementById("generated-recipe-card").style.display === "none", "'Try another idea' hides the result card again");
+  assert(window.document.getElementById("recipe-request").value === "", "'Try another idea' clears the request field");
+
+  // A dietary need that can't be fully honored (or a request with no good
+  // match at all) should say so plainly rather than pretending it fits.
+  window.document.getElementById("recipe-request").value = "asdkjqwoe unrecognizable nonsense zzz";
+  window.document.getElementById("generate-recipe-btn").click();
+  assert(/didn.t find a close match/i.test(window.document.getElementById("generated-recipe-notes").textContent), "an unmatched request is flagged honestly instead of implying a perfect fit");
+
   // ---- Profile (signed out) ----
   go("#/profile");
   assert(!!window.document.getElementById("tab-signin"), "profile page (signed out) shows Sign In tab");
@@ -208,15 +246,16 @@ async function main() {
   window.document.getElementById("delete-recipe-btn").click(); // triggers confirm() -> jsdom default confirm returns false
   await flush();
   // jsdom's window.confirm returns false by default, so the recipe should NOT be deleted yet.
+  // (Compared by id, not total count, since other tests — e.g. Recipe Creator — may have saved additional recipes by this point.)
   let stillThere = JSON.parse(window.localStorage.getItem("mg_recipes_v1"));
-  assert(stillThere.length === 1, "delete without confirmation leaves recipe intact (jsdom confirm() defaults false)");
+  assert(stillThere.some((r) => r.id === recipeId), "delete without confirmation leaves recipe intact (jsdom confirm() defaults false)");
 
   // Force-confirm delete by monkey-patching confirm to true and re-invoking the handler logic directly.
   window.confirm = () => true;
   window.document.getElementById("delete-recipe-btn").click();
   await flush();
   stillThere = JSON.parse(window.localStorage.getItem("mg_recipes_v1"));
-  assert(stillThere.length === 0, "delete with confirmation removes the recipe");
+  assert(!stillThere.some((r) => r.id === recipeId), "delete with confirmation removes the recipe");
 
   // ---- Stub pages don't crash ----
   ["#/friends", "#/settings", "#/community", "#/substitutions"].forEach((h) => {
