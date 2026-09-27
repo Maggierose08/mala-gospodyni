@@ -710,9 +710,39 @@ function wireAllergen(id) {
 }
 
 // ---------- View: Temperature Converter ----------
+function renderOvenTypeCard() {
+  return `
+    <div class="card">
+      <h2>Oven type</h2>
+      <p class="hint">Recipes are usually written for a standard electric oven — select yours for tips on what to watch for.</p>
+      <div class="row-flex" style="margin-bottom:10px;">
+        <div class="field" style="min-width:220px;">
+          <label for="oven-type-select">Your oven</label>
+          <select id="oven-type-select">
+            ${Object.keys(OVEN_TYPES).map((key) => `<option value="${key}">${OVEN_TYPES[key].label}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div id="oven-type-info"></div>
+    </div>
+  `;
+}
+
+function renderOvenTypeInfo(key) {
+  const info = OVEN_TYPES[key];
+  if (!info) return "";
+  return `
+    <p class="hint">${info.summary}</p>
+    <ul style="margin:6px 0 0; padding-left:20px; font-size:0.88rem; color:var(--ink);">
+      ${info.tips.map((t) => `<li style="margin-bottom:4px;">${t}</li>`).join("")}
+    </ul>
+  `;
+}
+
 function renderTemp() {
   return `
     ${pageHeader("Temperature Converter")}
+    ${renderOvenTypeCard()}
     <div class="card">
       <h2>Quick reference</h2>
       <table class="temp-ref-table">
@@ -727,6 +757,7 @@ function renderTemp() {
         <span>=</span>
         <div class="temp-field"><input type="number" id="temp-c" step="any" placeholder="177"><label for="temp-c" style="margin:0;">°C</label></div>
       </div>
+      <p id="temp-oven-adjust" class="hint" style="margin-top:8px;"></p>
     </div>
     <div class="card">
       <h2>Altitude adjustment</h2>
@@ -743,17 +774,40 @@ function renderTemp() {
 }
 
 function wireTemp() {
+  const ovenSelect = document.getElementById("oven-type-select");
+  const ovenInfo = document.getElementById("oven-type-info");
   const tempF = document.getElementById("temp-f");
   const tempC = document.getElementById("temp-c");
+  const ovenAdjust = document.getElementById("temp-oven-adjust");
+
+  function updateOvenAdjustNote() {
+    const info = OVEN_TYPES[ovenSelect.value];
+    const f = parseFloat(tempF.value);
+    if (!info || !info.offsetF || tempF.value === "" || isNaN(f)) {
+      ovenAdjust.textContent = "";
+      return;
+    }
+    const adjustedF = f + info.offsetF;
+    ovenAdjust.textContent = `For a ${info.label.toLowerCase()} oven, try around ${fmtNum(adjustedF)}°F (${fmtNum(fToC(adjustedF))}°C) instead, and check a few minutes early.`;
+  }
+
+  ovenSelect.addEventListener("change", () => {
+    ovenInfo.innerHTML = renderOvenTypeInfo(ovenSelect.value);
+    updateOvenAdjustNote();
+  });
+  ovenInfo.innerHTML = renderOvenTypeInfo(ovenSelect.value);
+
   tempF.addEventListener("input", () => {
-    if (tempF.value === "") { tempC.value = ""; return; }
+    if (tempF.value === "") { tempC.value = ""; ovenAdjust.textContent = ""; return; }
     const f = parseFloat(tempF.value);
     if (!isNaN(f)) tempC.value = fmtNum(fToC(f));
+    updateOvenAdjustNote();
   });
   tempC.addEventListener("input", () => {
-    if (tempC.value === "") { tempF.value = ""; return; }
+    if (tempC.value === "") { tempF.value = ""; ovenAdjust.textContent = ""; return; }
     const c = parseFloat(tempC.value);
     if (!isNaN(c)) tempF.value = fmtNum(cToF(c));
+    updateOvenAdjustNote();
   });
 
   const elevationInput = document.getElementById("elevation-ft");

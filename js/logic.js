@@ -76,6 +76,47 @@ const OVEN_TEMP_QUICK_REF = [
   { f: 450, c: 230 }, { f: 475, c: 245 }, { f: 500, c: 260 },
 ];
 
+// Gas, electric, and convection ovens behave differently even set to the
+// "same" temperature. Recipes are generally written and tested in a
+// standard electric (or unspecified "conventional") oven, so this offers
+// guidance for the other two — honestly: there is no single agreed-on
+// "add/subtract this many degrees" rule between gas and electric (real
+// cooking sources are clear that difference is about heat evenness and
+// humidity, not a fixed number), so `offsetF` is only ever non-zero for
+// convection, where a specific rule of thumb (-25°F, check ~10 min early)
+// is widely and consistently recommended.
+const OVEN_TYPES = {
+  electric: {
+    label: "Electric (standard)",
+    summary: "Most recipes are written and tested in a standard electric oven, so no adjustment is usually needed — the numbers above should already match what the recipe expects.",
+    offsetF: 0,
+    tips: [
+      "Even, fairly dry heat — a reliable default for cakes, cookies, and pastries.",
+      "Good for roasts and bread too, but keep an eye on delicate bakes near the end so they don't dry out.",
+    ],
+  },
+  gas: {
+    label: "Gas",
+    summary: "Gas ovens tend to run less evenly than electric, with a more humid interior — that's a difference in heat behavior, not a fixed number of degrees, so there's no reliable \"add/subtract this much\" rule to apply here.",
+    offsetF: 0,
+    tips: [
+      "Expect hot spots, often toward the back or top — rotate pans halfway through baking.",
+      "The extra humidity helps crusty bread, but can leave cookies and pastries paler or softer than expected — a few extra minutes of baking time can help them brown.",
+      "Gas oven dials are often less accurate than electric ones — an inexpensive oven thermometer shows what temperature you're really baking at.",
+    ],
+  },
+  convection: {
+    label: "Convection / Fan",
+    summary: "The fan circulates hot air, cooking faster and more evenly than a standard oven — most recipes (written for a standard oven) need a lower temperature and less time.",
+    offsetF: -25,
+    tips: [
+      "Common rule of thumb: lower the recipe's temperature by 25°F (about 15°C), and start checking for doneness about 10 minutes before the recipe's stated time.",
+      "Great for roasting and for baking multiple trays at once — even air circulation means less need to rotate pans.",
+      "For delicate cakes, custards, or soufflés, some bakers turn the fan off (if the oven allows it) since fast-moving air can dry them out or affect how they rise.",
+    ],
+  },
+};
+
 // Rule-of-thumb high-altitude baking adjustments. These are general
 // guidelines, not exact science — the right fix depends on the specific
 // recipe. Elevation in feet.
@@ -161,16 +202,19 @@ function fmtNum(n) {
 // `approx` marks a pair that crosses the metric/US-customary line (e.g.
 // cups to mL) — genuinely a rounded approximation — vs. an exact
 // definitional ratio within one system (e.g. 1 lb is exactly 16 oz).
-function popularConversion(label, qty, fromUnit, toUnit, approx) {
-  const result = convertUnit(qty, fromUnit, toUnit, "");
+// An optional `ingredientName` routes through convertUnit()'s cross
+// volume<->weight path (via DENSITY_G_PER_CUP) for the gram conversions
+// below — those are inherently approximate (density varies by how
+// packed/sifted an ingredient is), which is why each names the ingredient
+// rather than claiming a universal "1 cup = X g".
+function popularConversion(label, qty, fromUnit, toUnit, approx, ingredientName) {
+  const result = convertUnit(qty, fromUnit, toUnit, ingredientName || "");
   return { label, value: fmtNum(result.value), unit: toUnit, approx: !!approx };
 }
 
 const POPULAR_CONVERSIONS = [
   popularConversion("1 tbsp", 1, "tbsp", "tsp"),
   popularConversion("1/4 cup", 0.25, "cup", "tbsp"),
-  popularConversion("1 cup", 1, "cup", "tbsp"),
-  popularConversion("1 cup", 1, "cup", "tsp"),
   popularConversion("1 cup", 1, "cup", "fl oz"),
   popularConversion("1 cup", 1, "cup", "mL", true),
   popularConversion("1 L", 1, "L", "mL"),
@@ -179,6 +223,13 @@ const POPULAR_CONVERSIONS = [
   popularConversion("1 kg", 1, "kg", "g"),
   popularConversion("1 kg", 1, "kg", "lb", true),
   popularConversion("1 oz", 1, "oz", "g", true),
+  popularConversion("1 cup flour", 1, "cup", "g", true, "flour"),
+  popularConversion("1 tbsp flour", 1, "tbsp", "g", true, "flour"),
+  popularConversion("1 tsp flour", 1, "tsp", "g", true, "flour"),
+  popularConversion("1 cup sugar", 1, "cup", "g", true, "sugar"),
+  popularConversion("1 tbsp sugar", 1, "tbsp", "g", true, "sugar"),
+  popularConversion("1 cup butter", 1, "cup", "g", true, "butter"),
+  popularConversion("1 tbsp butter", 1, "tbsp", "g", true, "butter"),
 ];
 
 // ============================================================
@@ -275,7 +326,7 @@ function parseOcrText(rawText) {
 // for the Node-based test script.
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, POPULAR_CONVERSIONS, ALLERGEN_MAP,
+    VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, POPULAR_CONVERSIONS, OVEN_TYPES, ALLERGEN_MAP,
     findDensity, convertUnit, scaleQty, fToC, cToF, altitudeAdjustment, checkAllergens, fmtNum,
     parseOcrText,
   };
