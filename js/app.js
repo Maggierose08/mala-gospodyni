@@ -1563,58 +1563,135 @@ function wireProfile() {
 }
 
 // ---------- View: Community Recipes ----------
+// Shared by the Community Recipes folders, category pages, and search
+// results, so a card looks and behaves the same everywhere it appears.
+// `showCategoryTag` is turned off on a category page, where every card is
+// already the same category and the tag would just be noise.
+function renderCommunityCardRows(recipes, showCategoryTag) {
+  return recipes.length
+    ? recipes.map((r) => {
+        const catMeta = showCategoryTag ? RECIPE_CATEGORIES.find((c) => c.key === r.category) : null;
+        return `
+          <div class="recipe-card" data-open-community="${r.id}">
+            <div>
+              <div class="rc-title">${escapeHtml(r.title || "(untitled recipe)")}${catMeta ? `<span class="tag">${catMeta.label}</span>` : ""}</div>
+              <div class="rc-meta">by @${escapeHtml(r.authorUsername || "unknown")} · ${r.servings || "?"} servings</div>
+            </div>
+            <span>›</span>
+          </div>`;
+      }).join("")
+    : `<p class="muted-msg">No community recipes here yet.</p>`;
+}
+
+function wireCommunityCardClicks(container) {
+  container.querySelectorAll("[data-open-community]").forEach((n) => {
+    n.addEventListener("click", () => { location.hash = "#/community/" + n.getAttribute("data-open-community"); });
+  });
+}
+
+// ---------- View: Community Recipes home (folders, same idea as Recipes) ----------
 function renderCommunityList() {
   return `
     ${pageHeader("Community Recipes")}
     <p class="hint">Recipes here are shared by other users and haven't been reviewed — if something looks off, use the Report button on its page.</p>
     <div class="field" style="margin-bottom:14px;">
-      <label for="community-search">Search</label>
+      <label for="community-search">Search all community recipes</label>
       <input type="text" id="community-search" placeholder="Search by title or ingredient…">
     </div>
     <div id="community-status" class="muted-msg">Loading community recipes…</div>
-    <div id="community-list"></div>
+    <div id="community-folders"></div>
+    <div id="community-search-results" style="display:none;"></div>
   `;
 }
 
 function wireCommunityList() {
   const statusDiv = document.getElementById("community-status");
-  const listDiv = document.getElementById("community-list");
+  const foldersDiv = document.getElementById("community-folders");
+  const resultsDiv = document.getElementById("community-search-results");
   const searchInput = document.getElementById("community-search");
 
-  function renderList(filterText) {
-    const q = (filterText || "").trim().toLowerCase();
-    const all = communityCache || [];
-    const filtered = !q ? all : all.filter((r) =>
-      (r.title || "").toLowerCase().includes(q) ||
-      (r.ingredients || []).some((i) => (i.name || "").toLowerCase().includes(q))
-    );
-    listDiv.innerHTML = filtered.length
-      ? filtered.map((r) => {
-          const catMeta = RECIPE_CATEGORIES.find((c) => c.key === r.category);
-          return `
-            <div class="recipe-card" data-open-community="${r.id}">
-              <div>
-                <div class="rc-title">${escapeHtml(r.title || "(untitled recipe)")}${catMeta ? `<span class="tag">${catMeta.label}</span>` : ""}</div>
-                <div class="rc-meta">by @${escapeHtml(r.authorUsername || "unknown")} · ${r.servings || "?"} servings</div>
-              </div>
-              <span>›</span>
-            </div>`;
-        }).join("")
-      : `<p class="muted-msg">${q ? "No community recipes match that search." : "No one has shared a recipe yet — share one of yours from the Recipes tab!"}</p>`;
-    listDiv.querySelectorAll("[data-open-community]").forEach((n) => {
-      n.addEventListener("click", () => { location.hash = "#/community/" + n.getAttribute("data-open-community"); });
+  function renderFolders(all) {
+    if (!all.length) {
+      foldersDiv.innerHTML = `<p class="muted-msg">No one has shared a recipe yet — share one of yours from the Recipes tab!</p>`;
+      return;
+    }
+    const folderTiles = RECIPE_CATEGORIES.map((c) => {
+      const count = all.filter((r) => r.category === c.key).length;
+      return `
+        <div class="home-box ${c.color}" data-route="#/community/category/${c.key}">
+          ${ICONS[c.icon]}<span>${c.label}</span>
+          <span class="hint" style="margin:0;">${count} recipe${count === 1 ? "" : "s"}</span>
+        </div>`;
+    }).join("");
+    const uncategorizedCount = all.filter((r) => !r.category).length;
+    const uncategorizedTile = uncategorizedCount ? `
+      <div class="home-box" data-route="#/community/category/uncategorized">
+        ${ICONS.folder}<span>Uncategorized</span>
+        <span class="hint" style="margin:0;">${uncategorizedCount} recipe${uncategorizedCount === 1 ? "" : "s"}</span>
+      </div>` : "";
+    foldersDiv.innerHTML = `<div class="home-grid">${folderTiles}${uncategorizedTile}</div>`;
+    foldersDiv.querySelectorAll("[data-route]").forEach((n) => {
+      n.addEventListener("click", () => { location.hash = n.getAttribute("data-route"); });
     });
   }
 
-  fetchCommunity(true).then(() => {
+  // Typing a search swaps the folders out for a flat, matching list across
+  // every category; clearing it brings the folders back.
+  function renderSearch(all, filterText) {
+    const q = (filterText || "").trim().toLowerCase();
+    if (!q) {
+      resultsDiv.style.display = "none";
+      resultsDiv.innerHTML = "";
+      foldersDiv.style.display = "";
+      return;
+    }
+    foldersDiv.style.display = "none";
+    resultsDiv.style.display = "";
+    const filtered = all.filter((r) =>
+      (r.title || "").toLowerCase().includes(q) ||
+      (r.ingredients || []).some((i) => (i.name || "").toLowerCase().includes(q))
+    );
+    resultsDiv.innerHTML = filtered.length
+      ? renderCommunityCardRows(filtered, true)
+      : `<p class="muted-msg">No community recipes match that search.</p>`;
+    wireCommunityCardClicks(resultsDiv);
+  }
+
+  fetchCommunity(true).then((all) => {
     statusDiv.style.display = "none";
-    renderList(searchInput.value);
+    renderFolders(all);
+    renderSearch(all, searchInput.value);
+    searchInput.addEventListener("input", () => renderSearch(all, searchInput.value));
   }).catch((err) => {
     console.error("Could not load community recipes", err);
     statusDiv.textContent = err.message || "Sorry, community recipes couldn't be loaded right now.";
   });
+}
 
-  searchInput.addEventListener("input", () => renderList(searchInput.value));
+// ---------- View: Community Recipes, one folder ----------
+function renderCommunityCategory(key) {
+  const meta = RECIPE_CATEGORIES.find((c) => c.key === key);
+  const label = meta ? meta.label : "Uncategorized";
+  return `
+    ${pageHeader(label, "#/community")}
+    <div id="community-category-status" class="muted-msg">Loading community recipes…</div>
+    <div id="community-category-list"></div>
+  `;
+}
+
+function wireCommunityCategory(key) {
+  const statusDiv = document.getElementById("community-category-status");
+  const listDiv = document.getElementById("community-category-list");
+
+  fetchCommunity(true).then((all) => {
+    statusDiv.style.display = "none";
+    const filtered = all.filter((r) => (key === "uncategorized" ? !r.category : r.category === key));
+    listDiv.innerHTML = renderCommunityCardRows(filtered, false);
+    wireCommunityCardClicks(listDiv);
+  }).catch((err) => {
+    console.error("Could not load community recipes", err);
+    statusDiv.textContent = err.message || "Sorry, community recipes couldn't be loaded right now.";
+  });
 }
 
 function renderCommunityDetail() {
@@ -1767,6 +1844,7 @@ function currentRoute() {
   if (hash === "#/temp/altitude") return { name: "temp-altitude" };
   if (hash === "#/temp/safe-meat") return { name: "temp-safe-meat" };
   if (hash === "#/temp") return { name: "temp-home" };
+  if (hash.startsWith("#/community/category/")) return { name: "community-category", key: parts[3] };
   if (hash.startsWith("#/community/")) return { name: "community-detail", id: parts[2] };
   if (hash === "#/community") return { name: "community-home" };
   if (hash.startsWith("#/substitutions/")) return { name: "substitution-category", key: parts[2] };
@@ -1817,6 +1895,9 @@ function render() {
   } else if (route.name === "community-home") {
     view.innerHTML = renderCommunityList();
     wireCommunityList();
+  } else if (route.name === "community-category") {
+    view.innerHTML = renderCommunityCategory(route.key);
+    wireCommunityCategory(route.key);
   } else if (route.name === "community-detail") {
     view.innerHTML = renderCommunityDetail();
     wireCommunityDetail(route.id);

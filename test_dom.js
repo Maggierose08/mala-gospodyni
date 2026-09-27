@@ -473,6 +473,7 @@ async function main() {
   let mockCloudRecipes = [];
   let communityPool = [
     { id: "friend1_abc", title: "Golabki", servings: 6, ingredients: [{ qty: 1, unit: "lb", name: "ground beef" }], steps: "Roll and bake.", category: "main", authorUid: "friend1", authorUsername: "babcia_anna", sourceRecipeId: "abc" },
+    { id: "friend2_xyz", title: "Fruit Salad", servings: 4, ingredients: [{ qty: 2, unit: "cup", name: "mixed fruit" }], steps: "Mix.", category: "", authorUid: "friend2", authorUsername: "ciocia_ewa", sourceRecipeId: "xyz" },
   ];
   const shareLog = [];
   const reportLog = [];
@@ -521,20 +522,40 @@ async function main() {
   await flush();
   assert(shareLog.includes("unshare:" + savedShared.id), "unchecking Share and saving calls window.MG.unshareFromCommunity");
 
-  // ---- Community Recipes: browsing, searching, viewing, saving a copy, reporting ----
+  // ---- Community Recipes: folders, searching, viewing, saving a copy, reporting ----
   go("#/community");
   await flush();
-  assert(/babcia_anna/.test(window.document.getElementById("community-list").textContent), "community list shows a shared recipe with its author, got: " + window.document.getElementById("community-list").textContent);
+  const communityFolderBoxes = window.document.querySelectorAll("#community-folders .home-box");
+  assert(communityFolderBoxes.length === 5, "community recipes shows the 4 category folders plus Uncategorized, got " + communityFolderBoxes.length);
+  const communityFoldersText = window.document.getElementById("community-folders").textContent;
+  assert(/Main Courses/.test(communityFoldersText) && /1 recipe/.test(communityFoldersText), "Main Courses folder shows a count of 1");
+  assert(/Uncategorized/.test(communityFoldersText), "community recipes shows an Uncategorized folder for the recipe with no category");
 
+  go("#/community/category/main");
+  const communityCategoryBackBtn = window.document.getElementById("back-btn");
+  assert(communityCategoryBackBtn.getAttribute("data-back-route") === "#/community", "community category page's back button returns to Community Recipes");
+  await flush();
+  assert(/babcia_anna/.test(window.document.getElementById("community-category-list").textContent), "Main Courses folder shows Golabki's author, got: " + window.document.getElementById("community-category-list").textContent);
+  assert(!/Fruit Salad/.test(window.document.getElementById("community-category-list").textContent), "Main Courses folder doesn't show the uncategorized Fruit Salad");
+
+  go("#/community");
+  await flush();
   window.document.getElementById("community-search").value = "nothing-matches-this";
   window.document.getElementById("community-search").dispatchEvent(new window.Event("input"));
-  assert(/No community recipes match/.test(window.document.getElementById("community-list").textContent), "searching with no matches shows a no-results message");
+  assert(window.document.getElementById("community-folders").style.display === "none", "searching hides the folder grid");
+  assert(/No community recipes match/.test(window.document.getElementById("community-search-results").textContent), "searching with no matches shows a no-results message");
+
+  window.document.getElementById("community-search").value = "golabki";
+  window.document.getElementById("community-search").dispatchEvent(new window.Event("input"));
+  assert(/babcia_anna/.test(window.document.getElementById("community-search-results").textContent), "searching for golabki finds it across categories");
 
   window.document.getElementById("community-search").value = "";
   window.document.getElementById("community-search").dispatchEvent(new window.Event("input"));
+  assert(window.document.getElementById("community-folders").style.display !== "none", "clearing the search brings the folder grid back");
 
-  const communityCard = window.document.querySelector("[data-open-community]");
-  const communityId = communityCard.getAttribute("data-open-community");
+  go("#/community/category/main");
+  await flush();
+  const communityId = window.document.querySelector("[data-open-community]").getAttribute("data-open-community");
   go("#/community/" + communityId);
   await flush();
   assert(/babcia_anna/.test(window.document.getElementById("community-detail-body").textContent), "community detail page shows the recipe's author");
