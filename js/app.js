@@ -109,7 +109,14 @@ let communityCache = null;
 function fetchCommunity(forceRefresh) {
   if (!hasCloud()) return Promise.reject(new Error("Community recipes aren't available right now — please try again in a moment."));
   if (communityCache && !forceRefresh) return Promise.resolve(communityCache);
-  return window.MG.fetchCommunityRecipes().then((recipes) => {
+  // Wait for window.MG's first auth round-trip before querying — on a fresh
+  // page load, firebase-init.js's module script can finish just enough to
+  // expose window.MG before its Firestore connection is actually live, and
+  // an early getDocs() call in that gap can silently come back empty
+  // instead of waiting for the real answer. `ready` resolves right after
+  // that first round-trip completes, and is already-resolved (so this costs
+  // nothing) on every later, warm call.
+  return window.MG.ready.then(() => window.MG.fetchCommunityRecipes()).then((recipes) => {
     communityCache = recipes;
     return recipes;
   });

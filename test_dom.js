@@ -477,6 +477,7 @@ async function main() {
   const shareLog = [];
   const reportLog = [];
   window.MG = {
+    ready: Promise.resolve(),
     getCurrentUser: () => mockUser,
     getCloudRecipes: () => mockCloudRecipes,
     upsertRecipe: async (r) => {
