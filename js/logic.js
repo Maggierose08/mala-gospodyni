@@ -820,6 +820,70 @@ function parseOcrText(rawText) {
   return { title, ingredients, steps: stepLines.join("\n") };
 }
 
+// ---------- Substitution Tips (static curated reference) ----------
+// General cooking swaps for when you're missing an ingredient — distinct
+// from the Allergen Checker's substitutions, which are specifically about
+// avoiding an allergen/dietary restriction rather than "I'm just out of it."
+// Organized into folders the same way Recipes/Temperature/Allergen are.
+const SUBSTITUTION_CATEGORIES = [
+  {
+    key: "baking",
+    label: "Baking & Leavening",
+    icon: "cupcake",
+    color: "butter",
+    entries: [
+      { need: "Buttermilk", sub: "1 cup milk + 1 tbsp lemon juice or vinegar", note: "Let it sit 5–10 minutes until slightly thickened." },
+      { need: "Baking powder", sub: "1/4 tsp baking soda + 1/2 tsp cream of tartar, per 1 tsp needed", note: "Mix in right before baking — it starts reacting immediately." },
+      { need: "Self-rising flour", sub: "1 cup all-purpose flour + 1 1/2 tsp baking powder + 1/4 tsp salt", note: "" },
+      { need: "Brown sugar", sub: "1 cup white sugar + 1 tbsp molasses", note: "Use 2 tbsp molasses for a dark-brown-sugar flavor." },
+      { need: "Cake flour", sub: "1 cup all-purpose flour, minus 2 tbsp, + 2 tbsp cornstarch", note: "Sift together well before using." },
+      { need: "Vanilla extract", sub: "Maple syrup, or almond extract at half the amount", note: "The flavor will shift slightly." },
+    ],
+  },
+  {
+    key: "dairy-eggs",
+    label: "Dairy & Eggs",
+    icon: "bowl",
+    color: "blush",
+    entries: [
+      { need: "Eggs, for binding", sub: "1 tbsp ground flaxseed + 3 tbsp water, per egg", note: "Stir and let it sit about 5 minutes to gel." },
+      { need: "Eggs, for baking", sub: "1/4 cup unsweetened applesauce or mashed banana, per egg", note: "Adds a little extra sweetness and moisture." },
+      { need: "Heavy cream", sub: "3/4 cup milk + 1/4 cup melted butter", note: "Fine for cooking and baking, but it won't whip." },
+      { need: "Sour cream", sub: "Plain yogurt, same amount", note: "Full-fat Greek yogurt gives the closest texture." },
+      { need: "Butter, in baking", sub: "About 3/4 the amount of a neutral oil", note: "Results will be a bit more tender and moist." },
+      { need: "Milk", sub: "Any nut or oat milk, or water with a splash of cream", note: "" },
+    ],
+  },
+  {
+    key: "produce",
+    label: "Produce & Aromatics",
+    icon: "leaf",
+    color: "",
+    entries: [
+      { need: "Fresh garlic", sub: "1/4 tsp garlic powder per clove", note: "" },
+      { need: "Fresh onion", sub: "1 tbsp dried minced onion per 1/4 cup fresh, chopped", note: "Rehydrate it in the recipe's liquid first if you can." },
+      { need: "Fresh herbs", sub: "Dried herbs, about 1/3 the amount", note: "Add them earlier in cooking so they have time to rehydrate." },
+      { need: "Lemon juice", sub: "White vinegar, about half the amount", note: "" },
+      { need: "Shallot", sub: "A small onion plus a little extra garlic", note: "" },
+      { need: "Fresh ginger", sub: "1/4 tsp ground ginger per tablespoon fresh", note: "" },
+    ],
+  },
+  {
+    key: "pantry",
+    label: "Pantry & Sauces",
+    icon: "utensils",
+    color: "blush",
+    entries: [
+      { need: "Cornstarch, for thickening", sub: "Twice the amount of all-purpose flour", note: "" },
+      { need: "Breadcrumbs", sub: "Crushed crackers, rolled oats, or panko", note: "" },
+      { need: "Wine, in a sauce", sub: "Broth with a splash of vinegar or lemon juice", note: "" },
+      { need: "Soy sauce", sub: "Worcestershire sauce, or a well-salted broth", note: "Not gluten-free by default — see the Allergen Checker for that." },
+      { need: "Tomato paste", sub: "About 3x the amount of ketchup", note: "Cut back on any added sugar elsewhere in the recipe." },
+      { need: "Honey", sub: "Equal parts maple syrup or agave", note: "" },
+    ],
+  },
+];
+
 // Exposed for app.js (browser <script> include, no bundler in Phase 1) and
 // for the Node-based test script.
 if (typeof module !== "undefined" && module.exports) {
@@ -828,5 +892,6 @@ if (typeof module !== "undefined" && module.exports) {
     findDensity, convertUnit, scaleQty, fToC, cToF, altitudeAdjustment, checkAllergens, findIngredientSubstitutions, fmtNum,
     parseOcrText,
     RECIPE_TEMPLATES, detectDietaryFilters, parseServingsFromRequest, matchRecipeTemplates, generateRecipe,
+    SUBSTITUTION_CATEGORIES,
   };
 }

@@ -381,10 +381,37 @@ async function main() {
   assert(!stillThere.some((r) => r.id === recipeId), "delete with confirmation removes the recipe");
 
   // ---- Stub pages don't crash ----
-  ["#/friends", "#/settings", "#/community", "#/substitutions"].forEach((h) => {
+  ["#/friends", "#/settings"].forEach((h) => {
     go(h);
     assert(/not built yet/i.test(window.document.getElementById("view").textContent), "stub page renders for " + h);
   });
+
+  // ---- Substitution Tips (folders, static content, no sign-in needed) ----
+  go("#/substitutions");
+  const subBoxes = window.document.querySelectorAll("#view .home-box");
+  assert(subBoxes.length === 4, "substitutions home shows the 4 folders, got " + subBoxes.length);
+  ["Baking & Leavening", "Dairy & Eggs", "Produce & Aromatics", "Pantry & Sauces"].forEach((label) => {
+    assert(new RegExp(label.replace("&", "&amp;")).test(window.document.getElementById("view").innerHTML) || window.document.getElementById("view").textContent.includes(label), "substitutions home includes a " + label + " folder");
+  });
+
+  go("#/substitutions/baking");
+  assert(window.document.getElementById("back-btn").getAttribute("data-back-route") === "#/substitutions", "substitution category back button returns to #/substitutions");
+  assert(/Buttermilk/.test(window.document.getElementById("view").textContent), "Baking & Leavening substitutions include Buttermilk");
+  assert(/Baking powder/.test(window.document.getElementById("view").textContent), "Baking & Leavening substitutions include Baking powder");
+
+  go("#/substitutions/dairy-eggs");
+  assert(/for binding/.test(window.document.getElementById("view").textContent), "Dairy & Eggs substitutions include an egg-binding swap");
+
+  go("#/substitutions/produce");
+  assert(/Fresh garlic/.test(window.document.getElementById("view").textContent), "Produce & Aromatics substitutions include Fresh garlic");
+
+  go("#/substitutions/pantry");
+  assert(/Soy sauce/.test(window.document.getElementById("view").textContent), "Pantry & Sauces substitutions include Soy sauce");
+
+  // ---- Community Recipes (signed out / window.MG unavailable) ----
+  go("#/community");
+  await flush();
+  assert(/aren't available/i.test(window.document.getElementById("community-status").textContent), "community list shows an unavailable message when window.MG isn't loaded yet, got: " + window.document.getElementById("community-status").textContent);
 
   // ---- Forgot password (window.MG loaded, but signed out) ----
   // Set the hash and re-render directly, then flush once before touching
@@ -426,6 +453,90 @@ async function main() {
   await flush();
   assert(mockUser.username === "new_handle", "saving a new username calls window.MG.changeUsername");
   assert(window.document.getElementById("username-input").value === "new_handle", "profile page shows the updated username after saving");
+
+  // ---- Community Recipes: sharing from the recipe form, browsing, saving a
+  // copy, and reporting — all via a mocked window.MG, since real Firebase
+  // can't run inside jsdom ----
+  let mockCloudRecipes = [];
+  let communityPool = [
+    { id: "friend1_abc", title: "Golabki", servings: 6, ingredients: [{ qty: 1, unit: "lb", name: "ground beef" }], steps: "Roll and bake.", category: "main", authorUid: "friend1", authorUsername: "babcia_anna", sourceRecipeId: "abc" },
+  ];
+  const shareLog = [];
+  const reportLog = [];
+  window.MG = {
+    getCurrentUser: () => mockUser,
+    getCloudRecipes: () => mockCloudRecipes,
+    upsertRecipe: async (r) => {
+      const idx = mockCloudRecipes.findIndex((x) => x.id === r.id);
+      if (idx >= 0) mockCloudRecipes[idx] = r; else mockCloudRecipes.push(r);
+    },
+    deleteRecipeCloud: async (id) => { mockCloudRecipes = mockCloudRecipes.filter((r) => r.id !== id); },
+    shareToCommunity: async (r) => {
+      shareLog.push("share:" + r.id);
+      communityPool = communityPool.filter((c) => c.sourceRecipeId !== r.id);
+      communityPool.push({ id: "testchef_" + r.id, title: r.title, servings: r.servings, ingredients: r.ingredients, steps: r.steps, category: r.category, authorUid: mockUser.uid, authorUsername: mockUser.username, sourceRecipeId: r.id });
+    },
+    unshareFromCommunity: async (id) => {
+      shareLog.push("unshare:" + id);
+      communityPool = communityPool.filter((c) => c.sourceRecipeId !== id);
+    },
+    fetchCommunityRecipes: async () => communityPool.slice(),
+    reportCommunityRecipe: async (id, reason) => { reportLog.push({ id, reason }); },
+    migrateLocalToCloud: async () => {},
+  };
+
+  // New recipe form shows the Share checkbox once signed in.
+  go("#/recipe/new");
+  assert(!!window.document.getElementById("share-community-checkbox"), "recipe form shows a Share to Community checkbox when signed in");
+  assert(!window.document.getElementById("share-community-checkbox").checked, "share checkbox starts unchecked for a new recipe");
+
+  window.document.getElementById("recipe-title").value = "Test Pierogi";
+  window.document.getElementById("share-community-checkbox").checked = true;
+  window.document.getElementById("save-recipe-btn").click();
+  await flush();
+  const savedShared = mockCloudRecipes.find((r) => r.title === "Test Pierogi");
+  assert(!!savedShared, "saving a signed-in recipe calls window.MG.upsertRecipe");
+  assert(savedShared.shared === true, "the saved recipe is marked shared when the checkbox was checked");
+  assert(shareLog.includes("share:" + savedShared.id), "checking Share and saving calls window.MG.shareToCommunity");
+
+  // Editing that recipe and unchecking Share calls unshareFromCommunity.
+  go("#/recipe/edit/" + savedShared.id);
+  assert(window.document.getElementById("share-community-checkbox").checked, "edit form shows the checkbox checked for an already-shared recipe");
+  window.document.getElementById("share-community-checkbox").checked = false;
+  window.document.getElementById("save-recipe-btn").click();
+  await flush();
+  assert(shareLog.includes("unshare:" + savedShared.id), "unchecking Share and saving calls window.MG.unshareFromCommunity");
+
+  // ---- Community Recipes: browsing, searching, viewing, saving a copy, reporting ----
+  go("#/community");
+  await flush();
+  assert(/babcia_anna/.test(window.document.getElementById("community-list").textContent), "community list shows a shared recipe with its author, got: " + window.document.getElementById("community-list").textContent);
+
+  window.document.getElementById("community-search").value = "nothing-matches-this";
+  window.document.getElementById("community-search").dispatchEvent(new window.Event("input"));
+  assert(/No community recipes match/.test(window.document.getElementById("community-list").textContent), "searching with no matches shows a no-results message");
+
+  window.document.getElementById("community-search").value = "";
+  window.document.getElementById("community-search").dispatchEvent(new window.Event("input"));
+
+  const communityCard = window.document.querySelector("[data-open-community]");
+  const communityId = communityCard.getAttribute("data-open-community");
+  go("#/community/" + communityId);
+  await flush();
+  assert(/babcia_anna/.test(window.document.getElementById("community-detail-body").textContent), "community detail page shows the recipe's author");
+  assert(/Golabki/.test(window.document.getElementById("community-detail-body").textContent), "community detail page shows the recipe title");
+
+  window.document.getElementById("save-copy-btn").click();
+  await flush();
+  assert(mockCloudRecipes.some((r) => r.title === "Golabki" && r.shared === false), "Save a Copy adds the community recipe to My Recipes, unshared by default");
+
+  window.document.getElementById("report-recipe-btn").click();
+  assert(!!window.document.getElementById("submit-report-btn"), "clicking Report reveals a reason field and submit button");
+  window.document.getElementById("report-reason").value = "wrong ingredients";
+  window.document.getElementById("submit-report-btn").click();
+  await flush();
+  assert(reportLog.some((r) => r.id === communityId && r.reason === "wrong ingredients"), "submitting a report calls window.MG.reportCommunityRecipe with the reason");
+  assert(/reported/i.test(window.document.getElementById("report-box").textContent), "report box shows a thank-you confirmation after submitting");
 
   // ---- Profile (signed in, admin) — mocked window.MG with isAdmin:true ----
   const grants = [{ uid: "u2", grantedTo: "janes_kitchen", granted: true }];

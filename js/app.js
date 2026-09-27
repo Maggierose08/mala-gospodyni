@@ -88,9 +88,31 @@ function upsertRecipe(recipe) {
 }
 
 function deleteRecipe(id) {
-  if (isSignedIn()) return window.MG.deleteRecipeCloud(id);
+  if (isSignedIn()) {
+    // Deleting a recipe that's currently shared to the Community Recipes
+    // pool also removes its public copy — otherwise it'd be left orphaned
+    // there with no private recipe backing it.
+    const existing = getRecipe(id);
+    return window.MG.deleteRecipeCloud(id).then(() => {
+      communityCache = null;
+      if (existing && existing.shared) return window.MG.unshareFromCommunity(id);
+    });
+  }
   saveLocalRecipes(getLocalRecipes().filter((r) => r.id !== id));
   return Promise.resolve();
+}
+
+// ---------- Community Recipes: small in-memory cache ----------
+// Avoids re-fetching the whole public pool every time someone taps between
+// the list and a recipe's detail page in the same visit.
+let communityCache = null;
+function fetchCommunity(forceRefresh) {
+  if (!hasCloud()) return Promise.reject(new Error("Community recipes aren't available right now — please try again in a moment."));
+  if (communityCache && !forceRefresh) return Promise.resolve(communityCache);
+  return window.MG.fetchCommunityRecipes().then((recipes) => {
+    communityCache = recipes;
+    return recipes;
+  });
 }
 
 function newId() {
@@ -207,7 +229,7 @@ function renderRecipeCardRows(recipes) {
     ? recipes.map((r) => `
         <div class="recipe-card" data-open-recipe="${r.id}">
           <div>
-            <div class="rc-title">${escapeHtml(r.title || "(untitled recipe)")}</div>
+            <div class="rc-title">${escapeHtml(r.title || "(untitled recipe)")}${r.shared ? `<span class="tag">Shared</span>` : ""}</div>
             <div class="rc-meta">${r.servings || "?"} servings · ${(r.ingredients || []).length} ingredients</div>
           </div>
           <span>›</span>
@@ -314,6 +336,19 @@ function renderRecipeForm(id) {
               ${ICONS[c.icon]} ${c.label}
             </button>`).join("")}
         </div>
+      </div>
+
+      <div style="margin-top:16px;">
+        <label>Community</label>
+        ${isSignedIn() ? `
+          <label style="display:flex;align-items:center;gap:8px;font-weight:500;">
+            <input type="checkbox" id="share-community-checkbox" style="width:18px;height:18px;accent-color:var(--sage);"${existing && existing.shared ? " checked" : ""}>
+            Share this recipe on the Community Recipes page
+          </label>
+          <p class="hint">Anyone using the app can browse, view, and copy it. Uncheck and save to make it private again.</p>
+        ` : `
+          <p class="hint"><a href="#/profile">Sign in</a> to share this recipe with the community.</p>
+        `}
       </div>
 
       <div class="recipe-actions">
@@ -425,6 +460,7 @@ function wireRecipeForm(id) {
     });
   });
 
+  const shareCheckbox = document.getElementById("share-community-checkbox");
   const saveBtn = document.getElementById("save-recipe-btn");
   saveBtn.addEventListener("click", async () => {
     const title = document.getElementById("recipe-title").value.trim();
@@ -432,19 +468,27 @@ function wireRecipeForm(id) {
     const steps = document.getElementById("recipe-steps").value;
     const ingredients = readIngredientRows(rowsContainer).filter((i) => i.name.trim() || !isNaN(i.qty));
     if (!title) { alert("Please give the recipe a title before saving."); return; }
+    const wasShared = !!(existing && existing.shared);
+    const nowShared = shareCheckbox ? shareCheckbox.checked : wasShared;
     const recipe = {
       id: existing ? existing.id : newId(),
       title, servings: isNaN(servings) ? 0 : servings, ingredients, steps,
       category: selectedCategory,
+      shared: nowShared,
     };
     saveBtn.disabled = true;
     saveBtn.textContent = "Saving…";
     try {
       await upsertRecipe(recipe);
+      if (isSignedIn()) {
+        communityCache = null;
+        if (nowShared) await window.MG.shareToCommunity(recipe);
+        else if (wasShared) await window.MG.unshareFromCommunity(recipe.id);
+      }
       location.hash = "#/recipes";
     } catch (err) {
       console.error("Could not save recipe", err);
-      alert("Sorry, that recipe couldn't be saved: " + (err.message || err));
+      alert("Sorry, something went wrong saving that recipe: " + (err.message || err));
       saveBtn.disabled = false;
       saveBtn.textContent = "Save Recipe";
     }
@@ -1494,6 +1538,171 @@ function wireProfile() {
   }
 }
 
+// ---------- View: Community Recipes ----------
+function renderCommunityList() {
+  return `
+    ${pageHeader("Community Recipes")}
+    <p class="hint">Recipes here are shared by other users and haven't been reviewed — if something looks off, use the Report button on its page.</p>
+    <div class="field" style="margin-bottom:14px;">
+      <label for="community-search">Search</label>
+      <input type="text" id="community-search" placeholder="Search by title or ingredient…">
+    </div>
+    <div id="community-status" class="muted-msg">Loading community recipes…</div>
+    <div id="community-list"></div>
+  `;
+}
+
+function wireCommunityList() {
+  const statusDiv = document.getElementById("community-status");
+  const listDiv = document.getElementById("community-list");
+  const searchInput = document.getElementById("community-search");
+
+  function renderList(filterText) {
+    const q = (filterText || "").trim().toLowerCase();
+    const all = communityCache || [];
+    const filtered = !q ? all : all.filter((r) =>
+      (r.title || "").toLowerCase().includes(q) ||
+      (r.ingredients || []).some((i) => (i.name || "").toLowerCase().includes(q))
+    );
+    listDiv.innerHTML = filtered.length
+      ? filtered.map((r) => {
+          const catMeta = RECIPE_CATEGORIES.find((c) => c.key === r.category);
+          return `
+            <div class="recipe-card" data-open-community="${r.id}">
+              <div>
+                <div class="rc-title">${escapeHtml(r.title || "(untitled recipe)")}${catMeta ? `<span class="tag">${catMeta.label}</span>` : ""}</div>
+                <div class="rc-meta">by @${escapeHtml(r.authorUsername || "unknown")} · ${r.servings || "?"} servings</div>
+              </div>
+              <span>›</span>
+            </div>`;
+        }).join("")
+      : `<p class="muted-msg">${q ? "No community recipes match that search." : "No one has shared a recipe yet — share one of yours from the Recipes tab!"}</p>`;
+    listDiv.querySelectorAll("[data-open-community]").forEach((n) => {
+      n.addEventListener("click", () => { location.hash = "#/community/" + n.getAttribute("data-open-community"); });
+    });
+  }
+
+  fetchCommunity(true).then(() => {
+    statusDiv.style.display = "none";
+    renderList(searchInput.value);
+  }).catch((err) => {
+    console.error("Could not load community recipes", err);
+    statusDiv.textContent = err.message || "Sorry, community recipes couldn't be loaded right now.";
+  });
+
+  searchInput.addEventListener("input", () => renderList(searchInput.value));
+}
+
+function renderCommunityDetail() {
+  return `
+    ${pageHeader("Community Recipe", "#/community")}
+    <div id="community-detail-body" class="card"><p class="muted-msg">Loading…</p></div>
+  `;
+}
+
+function wireCommunityDetail(id) {
+  const body = document.getElementById("community-detail-body");
+
+  fetchCommunity(false).then((recipes) => {
+    const recipe = recipes.find((r) => r.id === id);
+    if (!recipe) {
+      body.innerHTML = `<p class="muted-msg">That recipe isn't available anymore.</p>`;
+      return;
+    }
+    const ingredientRows = (recipe.ingredients || []).length
+      ? recipe.ingredients.map((i) => `
+          <div class="scaled-row"><span>${escapeHtml(i.name || "(unnamed ingredient)")}</span><span class="scaled-amt">${i.qty || ""} ${i.unit || ""}</span></div>
+        `).join("")
+      : `<p class="muted-msg">No ingredients listed.</p>`;
+    body.innerHTML = `
+      <h2>${escapeHtml(recipe.title || "(untitled recipe)")}</h2>
+      <p class="rc-meta">Shared by @${escapeHtml(recipe.authorUsername || "unknown")} · ${recipe.servings || "?"} servings</p>
+      <label style="margin-top:14px;">Ingredients</label>
+      ${ingredientRows}
+      ${recipe.steps ? `<label style="margin-top:14px;">Steps</label><p style="white-space:pre-wrap;">${escapeHtml(recipe.steps)}</p>` : ""}
+      <div class="recipe-actions">
+        <button class="btn" id="save-copy-btn">Save a Copy to My Recipes</button>
+        <button class="btn secondary" id="report-recipe-btn">Report this recipe</button>
+      </div>
+      <div id="report-box"></div>
+    `;
+
+    document.getElementById("save-copy-btn").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      const copy = {
+        id: newId(),
+        title: recipe.title, servings: recipe.servings, ingredients: recipe.ingredients,
+        steps: recipe.steps, category: recipe.category || "", shared: false,
+      };
+      btn.disabled = true;
+      btn.textContent = "Saving…";
+      try {
+        await upsertRecipe(copy);
+        btn.textContent = "Saved to My Recipes ✓";
+      } catch (err) {
+        alert("Sorry, that couldn't be saved: " + (err.message || err));
+        btn.disabled = false;
+        btn.textContent = "Save a Copy to My Recipes";
+      }
+    });
+
+    document.getElementById("report-recipe-btn").addEventListener("click", () => {
+      const box = document.getElementById("report-box");
+      if (box.children.length) { box.innerHTML = ""; return; }
+      box.innerHTML = `
+        <div class="card" style="margin-top:10px;">
+          <label for="report-reason">What's the issue? (optional)</label>
+          <textarea id="report-reason" placeholder="e.g. wrong ingredients, offensive content…"></textarea>
+          <div class="recipe-actions">
+            <button class="btn danger" id="submit-report-btn">Submit Report</button>
+          </div>
+          <div id="report-status" class="hint"></div>
+        </div>
+      `;
+      document.getElementById("submit-report-btn").addEventListener("click", async () => {
+        const reason = document.getElementById("report-reason").value;
+        const statusEl = document.getElementById("report-status");
+        try {
+          await window.MG.reportCommunityRecipe(recipe.id, reason);
+          box.innerHTML = `<p class="muted-msg">Thanks — this recipe has been reported.</p>`;
+        } catch (err) {
+          statusEl.textContent = err.message || "Sorry, the report couldn't be sent.";
+        }
+      });
+    });
+  }).catch((err) => {
+    console.error("Could not load community recipe", err);
+    body.innerHTML = `<p class="muted-msg">${escapeHtml(err.message || "Sorry, that recipe couldn't be loaded right now.")}</p>`;
+  });
+}
+
+// ---------- View: Substitution Tips (folders, static curated reference) ----------
+function renderSubstitutionsHome() {
+  const tiles = SUBSTITUTION_CATEGORIES.map((c) => `
+    <div class="home-box ${c.color}" data-route="#/substitutions/${c.key}">${ICONS[c.icon]}<span>${c.label}</span></div>
+  `).join("");
+  return `
+    ${pageHeader("Substitution Tips")}
+    <p class="hint">General cooking swaps for when you're out of something. For allergy- or diet-specific swaps, use the Allergen Checker instead.</p>
+    <div class="home-grid">${tiles}</div>
+  `;
+}
+
+function renderSubstitutionCategory(key) {
+  const meta = SUBSTITUTION_CATEGORIES.find((c) => c.key === key);
+  const label = meta ? meta.label : "Substitutions";
+  const entries = meta ? meta.entries : [];
+  return `
+    ${pageHeader(label, "#/substitutions")}
+    ${entries.map((e) => `
+      <div class="card">
+        <h2>${escapeHtml(e.need)}</h2>
+        <p>${escapeHtml(e.sub)}</p>
+        ${e.note ? `<p class="hint">${escapeHtml(e.note)}</p>` : ""}
+      </div>`).join("")}
+  `;
+}
+
 // ---------- Stub views (Phase 2 / 3 features) ----------
 function renderStub(title, phaseNote) {
   return `
@@ -1513,8 +1722,6 @@ const routes = {
   "#/settings": { render: () => renderStub("Settings", "unit system and theme are coming in a later phase — for now the app uses US customary units and light mode.") },
   "#/profile": { render: renderProfile, wire: wireProfile },
   "#/create": { render: renderRecipeCreator, wire: wireRecipeCreator },
-  "#/community": { render: () => renderStub("Community Recipes", "this arrives in Phase 3, alongside moderation and the premium tier.") },
-  "#/substitutions": { render: () => renderStub("Substitution Tips", "this arrives in Phase 3, alongside moderation and the premium tier.") },
 };
 
 function currentRoute() {
@@ -1535,6 +1742,10 @@ function currentRoute() {
   if (hash === "#/temp/convert") return { name: "temp-convert" };
   if (hash === "#/temp/altitude") return { name: "temp-altitude" };
   if (hash === "#/temp") return { name: "temp-home" };
+  if (hash.startsWith("#/community/")) return { name: "community-detail", id: parts[2] };
+  if (hash === "#/community") return { name: "community-home" };
+  if (hash.startsWith("#/substitutions/")) return { name: "substitution-category", key: parts[2] };
+  if (hash === "#/substitutions") return { name: "substitutions-home" };
   if (routes[hash]) return { name: hash };
   return { name: "#/home" };
 }
@@ -1576,6 +1787,16 @@ function render() {
   } else if (route.name === "temp-altitude") {
     view.innerHTML = renderTempAltitude();
     wireTempAltitude();
+  } else if (route.name === "community-home") {
+    view.innerHTML = renderCommunityList();
+    wireCommunityList();
+  } else if (route.name === "community-detail") {
+    view.innerHTML = renderCommunityDetail();
+    wireCommunityDetail(route.id);
+  } else if (route.name === "substitutions-home") {
+    view.innerHTML = renderSubstitutionsHome();
+  } else if (route.name === "substitution-category") {
+    view.innerHTML = renderSubstitutionCategory(route.key);
   } else {
     const r = routes[route.name] || routes["#/home"];
     view.innerHTML = r.render();

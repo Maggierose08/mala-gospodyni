@@ -306,6 +306,21 @@ button.btn.danger:hover { background: #93433d; }
 .recipe-card .rc-title { font-weight: 700; color: var(--ink); }
 .recipe-card .rc-meta { font-size: 0.82rem; color: var(--muted); }
 
+/* Small inline pill — the "Shared" badge on your own recipe cards, and the
+   category badge on Community Recipes cards. */
+.tag {
+  display: inline-block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--sage-dark);
+  color: #fff;
+  border-radius: 4px;
+  padding: 1px 6px;
+  margin-left: 6px;
+}
+
 .recipe-actions { display: flex; gap: 8px; margin-top: 14px; }
 
 .stub-note {

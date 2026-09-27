@@ -62,6 +62,17 @@ function recipeDocRef(uid, recipeId) {
   return doc(db, "users", uid, "recipes", recipeId);
 }
 
+// A shared/public copy of a recipe lives in its own top-level collection
+// (not nested under the owning user, since anyone needs to be able to read
+// it) with a deterministic id, so re-sharing an already-shared recipe
+// updates the same doc instead of creating a duplicate.
+function communityDocId(uid, recipeId) {
+  return uid + "_" + recipeId;
+}
+function communityDocRef(uid, recipeId) {
+  return doc(db, "communityRecipes", communityDocId(uid, recipeId));
+}
+
 function subscribeToRecipes(uid) {
   if (recipesUnsubscribe) recipesUnsubscribe();
   recipesUnsubscribe = onSnapshot(
@@ -283,6 +294,8 @@ window.MG = {
       servings: recipe.servings,
       ingredients: recipe.ingredients,
       steps: recipe.steps,
+      category: recipe.category || null,
+      shared: !!recipe.shared,
       updatedAt: serverTimestamp(),
     });
   },
@@ -300,8 +313,59 @@ window.MG = {
         servings: r.servings,
         ingredients: r.ingredients,
         steps: r.steps,
+        category: r.category || null,
+        shared: !!r.shared,
         updatedAt: serverTimestamp(),
       });
     }
+  },
+
+  // ---- Community Recipes: a public, shared pool anyone can browse ----
+  // Sharing publishes a copy of the recipe (not a reference), so editing or
+  // deleting your private recipe later doesn't silently change or break
+  // what other people already see — re-saving with "Share" still checked
+  // re-publishes the latest version, and unchecking it (or deleting the
+  // recipe) removes the public copy.
+  shareToCommunity: async (recipe) => {
+    if (!currentUser) throw new Error("Not signed in.");
+    if (!currentUser.username) throw new Error("Please set a username on your Profile page before sharing.");
+    await setDoc(communityDocRef(currentUser.uid, recipe.id), {
+      title: recipe.title,
+      servings: recipe.servings,
+      ingredients: recipe.ingredients,
+      steps: recipe.steps,
+      category: recipe.category || null,
+      authorUid: currentUser.uid,
+      authorUsername: currentUser.username,
+      sourceRecipeId: recipe.id,
+      sharedAt: serverTimestamp(),
+    });
+  },
+
+  unshareFromCommunity: async (recipeId) => {
+    if (!currentUser) throw new Error("Not signed in.");
+    await deleteDoc(communityDocRef(currentUser.uid, recipeId));
+  },
+
+  // A one-time fetch rather than a live subscription — the community pool
+  // isn't needed anywhere except the Community Recipes page itself, and it
+  // can grow large, so there's no reason to keep it synced in the
+  // background for every signed-in (or signed-out) visitor.
+  fetchCommunityRecipes: async () => {
+    const snap = await getDocs(collection(db, "communityRecipes"));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+
+  // Flags a community recipe for the admin (you) to look at manually in the
+  // Firebase console — there's no review queue in the app yet, just a place
+  // for reports to land. Requires sign-in so this can't be spammed anonymously.
+  reportCommunityRecipe: async (communityRecipeId, reason) => {
+    if (!currentUser) throw new Error("Please sign in to report a recipe.");
+    await setDoc(doc(collection(db, "reports")), {
+      communityRecipeId,
+      reporterUid: currentUser.uid,
+      reason: reason || "",
+      createdAt: serverTimestamp(),
+    });
   },
 };
