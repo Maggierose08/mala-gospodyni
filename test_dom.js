@@ -104,9 +104,18 @@ async function main() {
   const recipeId = saved[0].id;
 
   // ---- Scale Converter ----
-  go("#/scale/" + recipeId);
+  // The Scale Converter tab is now a folder grid (same pattern as Recipes):
+  // "Popular Conversions" and "Convert Your Own" are separate pages.
+  go("#/scale");
+  const scaleFolderBoxes = window.document.querySelectorAll("#view .home-box");
+  assert(scaleFolderBoxes.length === 2, "scale converter shows 2 folders (Popular Conversions, Convert Your Own), got " + scaleFolderBoxes.length);
+  assert(/Popular Conversions/.test(window.document.getElementById("view").textContent), "scale converter folder grid includes Popular Conversions");
+  assert(/Convert Your Own/.test(window.document.getElementById("view").textContent), "scale converter folder grid includes Convert Your Own");
 
   // Popular conversions quick-reference table
+  go("#/scale/popular");
+  const popularBackBtn = window.document.getElementById("back-btn");
+  assert(popularBackBtn.getAttribute("data-back-route") === "#/scale", "Popular Conversions page's back button returns to the Scale Converter folder grid");
   const popRows = window.document.querySelectorAll(".temp-ref-table tr");
   assert(popRows.length === 18, "popular conversions table has header + 17 rows, got " + popRows.length);
   const popText = window.document.getElementById("view").textContent;
@@ -115,6 +124,11 @@ async function main() {
   assert(/1 cup flour[\s\S]*120 g/.test(popText), "popular conversions table includes 1 cup flour = 120 g");
   assert(/1 tbsp sugar[\s\S]*12\.5 g/.test(popText), "popular conversions table includes 1 tbsp sugar = 12.5 g");
   assert(/1 cup butter[\s\S]*227 g/.test(popText), "popular conversions table includes 1 cup butter = 227 g");
+
+  // "Convert Your Own" — saved recipe + ad-hoc entry
+  go("#/scale/convert/" + recipeId);
+  const convertBackBtn = window.document.getElementById("back-btn");
+  assert(convertBackBtn.getAttribute("data-back-route") === "#/scale", "Convert Your Own page's back button returns to the Scale Converter folder grid");
 
   const targetInput = window.document.getElementById("target-servings");
   assert(targetInput.value == "4", "scale defaults target servings to original servings");
@@ -137,7 +151,7 @@ async function main() {
   // the New Recipe form), so exercise it directly.
   assert(!!window.document.getElementById("scale-scan-input"), "scale converter shows its own scan control");
   assert(window.document.getElementById("scale-scan-reminder").style.display === "none", "scan-accuracy disclaimer stays hidden until a scan happens");
-  assert(/Convert your own ingredients/.test(window.document.body.textContent), "scale converter has a merged 'convert your own ingredients' section");
+  assert(/Convert Your Own/.test(window.document.body.textContent), "scale converter's Convert Your Own page shows that title");
   assert(/Or use a saved recipe/.test(window.document.body.textContent), "scale converter labels the saved-recipe picker section");
   const adhocRow = window.document.querySelector("#adhoc-scale-ingredient-rows .ing-row");
   assert(!!adhocRow, "convert-your-own-ingredients section starts with one blank ingredient row");

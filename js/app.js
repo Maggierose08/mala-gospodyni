@@ -538,13 +538,31 @@ function renderPopularConversionsTable() {
 }
 
 // ---------- View: Scale Converter ----------
-function renderScale(id) {
+// Split into two folders (same pattern as the Recipes tab): a static
+// reference table, and the "convert your own" workspace (manual entry,
+// scan, and the saved-recipe picker + live output).
+function renderScaleHome() {
+  return `
+    ${pageHeader("Scale Converter")}
+    <div class="home-grid">
+      <div class="home-box butter" data-route="#/scale/popular">${ICONS.book}<span>Popular Conversions</span></div>
+      <div class="home-box blush" data-route="#/scale/convert">${ICONS.scale}<span>Convert Your Own</span></div>
+    </div>
+  `;
+}
+
+function renderScalePopular() {
+  return `
+    ${pageHeader("Popular Conversions", "#/scale")}
+    ${renderPopularConversionsTable()}
+  `;
+}
+
+function renderScaleConvert(id) {
   const recipe = id ? getRecipe(id) : null;
   let body = `
-    ${pageHeader("Scale Converter")}
-    ${renderPopularConversionsTable()}
+    ${pageHeader("Convert Your Own", "#/scale")}
     <div class="card">
-      <h2>Convert your own ingredients</h2>
       <p class="hint">Add ingredients by hand below, or scan a photo of a recipe you haven't saved yet — no need to save it first.</p>
       ${renderScanControl("scale-scan", "Scan a Photo Instead")}
       <div id="scale-scan-reminder" class="disclaimer" style="display:none;">
@@ -574,7 +592,7 @@ function renderScale(id) {
       <div id="adhoc-scale-output"></div>
     </div>
     <p class="section-label">Or use a saved recipe</p>
-    ${renderRecipePicker(id, "#/scale/")}
+    ${renderRecipePicker(id, "#/scale/convert/")}
   `;
   if (recipe) {
     body += `
@@ -594,7 +612,7 @@ function renderScale(id) {
   return body;
 }
 
-function wireScale(id) {
+function wireScaleConvert(id) {
   // ---- Convert your own ingredients (blank by default; scan to fill in) ----
   const adhocRows = document.getElementById("adhoc-scale-ingredient-rows");
   const adhocOrigServings = document.getElementById("adhoc-orig-servings");
@@ -1429,8 +1447,10 @@ function currentRoute() {
   const parts = hash.split("/");
   if (hash.startsWith("#/recipe/edit/")) return { name: "edit-recipe", id: parts[3] };
   if (hash.startsWith("#/recipes/")) return { name: "recipe-category", category: parts[2] };
-  if (hash.startsWith("#/scale/")) return { name: "scale", id: parts[2] };
-  if (hash === "#/scale") return { name: "scale", id: null };
+  if (hash.startsWith("#/scale/convert/")) return { name: "scale-convert", id: parts[3] };
+  if (hash === "#/scale/convert") return { name: "scale-convert", id: null };
+  if (hash === "#/scale/popular") return { name: "scale-popular" };
+  if (hash === "#/scale") return { name: "scale-home" };
   if (hash.startsWith("#/allergen/")) return { name: "allergen", id: parts[2] };
   if (hash === "#/allergen") return { name: "allergen", id: null };
   if (hash === "#/temp") return { name: "temp" };
@@ -1447,9 +1467,13 @@ function render() {
     wireRecipeForm(route.id);
   } else if (route.name === "recipe-category") {
     view.innerHTML = renderRecipeCategory(route.category);
-  } else if (route.name === "scale") {
-    view.innerHTML = renderScale(route.id);
-    wireScale(route.id);
+  } else if (route.name === "scale-home") {
+    view.innerHTML = renderScaleHome();
+  } else if (route.name === "scale-popular") {
+    view.innerHTML = renderScalePopular();
+  } else if (route.name === "scale-convert") {
+    view.innerHTML = renderScaleConvert(route.id);
+    wireScaleConvert(route.id);
   } else if (route.name === "allergen") {
     view.innerHTML = renderAllergen(route.id);
     wireAllergen(route.id);
@@ -1503,9 +1527,9 @@ function updateProfileButton() {
 
 window.addEventListener("mg-auth-changed", () => {
   updateProfileButton();
-  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale", "allergen"]);
+  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale-convert", "allergen"]);
 });
-window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "recipe-category", "scale", "allergen", "#/profile"]));
+window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "recipe-category", "scale-convert", "allergen", "#/profile"]));
 
 window.addEventListener("hashchange", render);
 window.addEventListener("DOMContentLoaded", () => {
