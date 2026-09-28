@@ -16,7 +16,7 @@ const ICONS = {
   people: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="3"/><circle cx="17" cy="9" r="2.6"/><path d="M2.5 20c.6-3.6 3-5.5 5.5-5.5s4.9 1.9 5.5 5.5"/><path d="M13.5 15c2-.3 4 .8 4.6 3.2"/></svg>`,
   person: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.6"/><path d="M4 20c1-4.3 4-6.5 8-6.5s7 2.2 8 6.5"/></svg>`,
   gear: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13a7.7 7.7 0 0 0 0-2l2-1.4-2-3.4-2.3.8a7.6 7.6 0 0 0-1.7-1L15 3.6h-4l-.4 2.4a7.6 7.6 0 0 0-1.7 1l-2.3-.8-2 3.4L6.6 11a7.7 7.7 0 0 0 0 2l-2 1.4 2 3.4 2.3-.8a7.6 7.6 0 0 0 1.7 1l.4 2.4h4l.4-2.4a7.6 7.6 0 0 0 1.7-1l2.3.8 2-3.4-2-1.4Z"/></svg>`,
-  book: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h6v18H6a2 2 0 0 1-2-2V5Z"/><path d="M20 5a2 2 0 0 0-2-2h-6v18h6a2 2 0 0 0 2-2V5Z"/></svg>`,
+  book: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M7.5 3v18"/><path d="M14.5 3v6.5l-1.7-1.4L11 9.5V3"/><path d="M10.5 13.5h6M10.5 16.5h4.5"/></svg>`,
   swap: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>`,
   camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.3"/></svg>`,
   utensils: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11"/><path d="M7 2v5M10 2v5"/><path d="M17 2c-1.7 0-3 2-3 5s1.3 5 3 5v10"/></svg>`,
@@ -38,7 +38,7 @@ const ICONS = {
   flame: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c-1 3-4 4.5-4 8.5a4 4 0 0 0 8 0c0-1.5-.7-2.3-1.2-3 .3 1.6-.6 2.5-1.3 2.5-1 0-1-1-.7-1.8C13.4 6.5 13 4 12 2Z"/><path d="M8.5 14a3.5 3.5 0 0 0 7 0"/></svg>`,
   clipboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2.5" width="6" height="3" rx="1"/><path d="M8 10h8M8 13.5h8M8 17h5"/></svg>`,
   exchange: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 20V6M8 6 4.5 9.5M8 6l3.5 3.5"/><path d="M16 4v14M16 18l3.5-3.5M16 18l-3.5-3.5"/></svg>`,
-  drumstick: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15c-2.5 2.5-5 3-6 2s.5-3.5 3-6c2-2 5-5 7.5-5.5a3 3 0 0 1 4 4C15 12 12.5 15.5 9 15Z"/><path d="M4.5 19.5 8 16"/></svg>`,
+  steak: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 9c-.3-2.7 2.3-5 6-5 5.5 0 10 3.3 10 8s-5 8.5-10.5 8.5c-3.3 0-5.5-1.7-5.5-4.3 0-1.6.9-2.4 1-3.7.1-1.3-.8-1.8-1-3.5Z"/><path d="M8.5 9.5 12 12.5M11.5 8 15 11M14 7.5l3 2.7"/></svg>`,
   whisk: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v7"/><path d="M12 10c-3 0-4.5 2-4.5 4.5S9 19 12 19s4.5-2 4.5-4.5S15 10 12 10Z"/><path d="M9 10.5c0-2.5.5-5 1-6.5M15 10.5c0-2.5-.5-5-1-6.5"/></svg>`,
   egg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C8 8 6 12.5 6 15.5a6 6 0 0 0 12 0C18 12.5 16 8 12 3Z"/></svg>`,
   carrot: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 13c4-4 8-5.5 9.5-4S19 13 15 17c-2.5 2.5-5.5 3-7 1.5S8.5 15.5 11 13Z"/><path d="M9 19l-2.5 2.5M13 4.5 15 3M11.5 6 13 4M15.5 6l1-1.5"/></svg>`,
@@ -1281,7 +1281,7 @@ function renderTempHome() {
       <div class="home-box blush" data-route="#/temp/quick-ref">${ICONS.clipboard}<span>Quick Reference</span></div>
       <div class="home-box" data-route="#/temp/convert">${ICONS.exchange}<span>Convert Any Temperature</span></div>
       <div class="home-box blush" data-route="#/temp/altitude">${ICONS.mountain}<span>Altitude Adjustment</span></div>
-      <div class="home-box butter" data-route="#/temp/safe-meat">${ICONS.drumstick}<span>Safe Meat Temperatures</span></div>
+      <div class="home-box butter" data-route="#/temp/safe-meat">${ICONS.steak}<span>Safe Meat Temperatures</span></div>
     </div>
   `;
 }
