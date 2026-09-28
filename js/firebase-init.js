@@ -292,6 +292,31 @@ window.MG = {
   },
 
   // ---- Friends & family free access (admin-only; enforced by security rules) ----
+
+  // Looks an account up by username WITHOUT granting anything, so the admin
+  // can see who they'd actually be granting access to (avatar, username,
+  // contact info) before committing -- usernames are easy to mistype or
+  // confuse with a similarly-named account, and this is the only visual
+  // check before free access is handed out.
+  lookupUserForGrant: async (username) => {
+    if (!currentUser || !currentUser.isAdmin) throw new Error("Only the app owner can look up an account.");
+    const key = (username || "").trim().toLowerCase();
+    if (!key) throw new Error("Please enter a username.");
+    const usernameSnap = await getDoc(doc(db, "usernames", key));
+    if (!usernameSnap.exists()) throw new Error("No account found with that username.");
+    const uid = usernameSnap.data().uid;
+    const userSnap = await getDoc(doc(db, "users", uid));
+    if (!userSnap.exists()) throw new Error("That account's profile couldn't be found.");
+    const data = userSnap.data();
+    return {
+      uid,
+      username: data.username || username.trim(),
+      avatar: data.avatar || "",
+      email: data.email || "",
+      contactInfo: data.contactInfo || "",
+    };
+  },
+
   grantFriendAccess: async (username) => {
     if (!currentUser || !currentUser.isAdmin) throw new Error("Only the app owner can grant free access.");
     const key = username.trim().toLowerCase();
@@ -315,7 +340,25 @@ window.MG = {
   listGrants: async () => {
     if (!currentUser || !currentUser.isAdmin) throw new Error("Only the app owner can view this.");
     const snap = await getDocs(collection(db, "grants"));
-    return snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+    const grants = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+    // Best-effort: also pull each grantee's current profile, so the list
+    // shows their avatar and up-to-date username (not just whatever name
+    // was typed in at grant time, which goes stale if they rename later).
+    // If this fails (e.g. the security rules haven't been updated yet),
+    // the list still renders fine using grantedTo as a fallback.
+    await Promise.all(grants.map(async (g) => {
+      try {
+        const userSnap = await getDoc(doc(db, "users", g.uid));
+        if (userSnap.exists()) {
+          const data = userSnap.data();
+          g.avatar = data.avatar || "";
+          g.username = data.username || g.grantedTo;
+        }
+      } catch (e) {
+        // Fall back silently to grantedTo/no-avatar, handled by the caller.
+      }
+    }));
+    return grants;
   },
 
   upsertRecipe: async (recipe) => {

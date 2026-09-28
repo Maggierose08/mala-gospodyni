@@ -43,6 +43,20 @@ async function main() {
   assert(homeBoxes.length === 6, "home screen shows 6 boxes, got " + homeBoxes.length);
   assert(window.document.querySelectorAll(".quick-link").length === 2, "home screen shows 2 quick links");
 
+  // ---- fmtQty: ingredient quantities display as fractions ----
+  assert(window.fmtQty(0.25) === "1/4", "fmtQty(0.25) shows as 1/4, got " + window.fmtQty(0.25));
+  assert(window.fmtQty(0.5) === "1/2", "fmtQty(0.5) shows as 1/2, got " + window.fmtQty(0.5));
+  assert(window.fmtQty(0.75) === "3/4", "fmtQty(0.75) shows as 3/4, got " + window.fmtQty(0.75));
+  assert(window.fmtQty(0.33) === "1/3", "fmtQty(0.33) shows as 1/3 (close enough to 1/3), got " + window.fmtQty(0.33));
+  assert(window.fmtQty(1.5) === "1 1/2", "fmtQty(1.5) shows as a mixed number 1 1/2, got " + window.fmtQty(1.5));
+  assert(window.fmtQty(2.25) === "2 1/4", "fmtQty(2.25) shows as a mixed number 2 1/4, got " + window.fmtQty(2.25));
+  assert(window.fmtQty(4) === "4", "fmtQty(4) shows as a plain whole number, got " + window.fmtQty(4));
+  assert(window.fmtQty(2.15) === "2.15", "fmtQty(2.15) falls back to a plain decimal since it isn't close to a common cooking fraction, got " + window.fmtQty(2.15));
+  // fmtNum (used for unit-conversion results, not ingredient quantities) is
+  // untouched -- it should still show a plain decimal, since "12 1/2 g" for
+  // 12.5 grams of sugar would be wrong.
+  assert(window.fmtNum(12.5) === "12.5", "fmtNum(12.5) still shows a plain decimal (not a fraction), got " + window.fmtNum(12.5));
+
   // ---- Recipes list (empty) ----
   go("#/recipes");
   assert(/No recipes saved yet/.test(window.document.getElementById("view").textContent), "empty recipes list shows message");
@@ -545,7 +559,7 @@ async function main() {
   assert(!!window.document.getElementById("sign-out-btn"), "profile page shows a Sign Out button when signed in");
   assert(!window.document.getElementById("tab-signin"), "profile page hides the sign-in form once signed in");
   assert(!!window.document.getElementById("avatar-btn"), "profile page shows a Change Photo button for any signed-in user");
-  assert(!window.document.getElementById("grant-btn"), "profile page hides the friends & family admin panel for a non-admin user");
+  assert(!window.document.getElementById("grant-lookup-btn"), "profile page hides the friends & family admin panel for a non-admin user");
 
   window.document.getElementById("username-input").value = "new_handle";
   window.document.getElementById("save-username-btn").click();
@@ -745,19 +759,48 @@ async function main() {
     signOutUser: async () => {},
     migrateLocalToCloud: async () => {},
     listGrants: async () => grants.slice(),
+    lookupUserForGrant: async (username) => {
+      const key = username.trim().toLowerCase();
+      if (key === "new_friend") return { uid: "u3", username: "new_friend", avatar: "", email: "newfriend@example.com", contactInfo: "555-1234" };
+      throw new Error("No account found with that username.");
+    },
     grantFriendAccess: async (username) => { grants.push({ uid: "u3", grantedTo: username, granted: true }); return username; },
     revokeFriendAccess: async (uid) => { const i = grants.findIndex((g) => g.uid === uid); if (i >= 0) grants.splice(i, 1); },
   };
   go("#/profile");
-  assert(!!window.document.getElementById("grant-btn"), "profile page shows the friends & family admin panel for the admin account");
+  assert(!!window.document.getElementById("grant-lookup-btn"), "profile page shows the friends & family admin panel for the admin account");
   await flush();
   assert(/janes_kitchen/.test(window.document.getElementById("grants-list").textContent), "admin panel lists an existing grant, got: " + window.document.getElementById("grants-list").textContent);
 
-  window.document.getElementById("grant-username").value = "new_friend";
-  window.document.getElementById("grant-btn").click();
+  // Looking up an unknown username shows an error and grants nothing.
+  window.document.getElementById("grant-username").value = "nonexistent_user";
+  window.document.getElementById("grant-lookup-btn").click();
   await flush();
-  assert(grants.some((g) => g.grantedTo === "new_friend"), "granting a username calls window.MG.grantFriendAccess");
+  assert(/Couldn't look that up/.test(window.document.getElementById("grant-status").textContent), "looking up an unknown username shows an error, got: " + window.document.getElementById("grant-status").textContent);
+  assert(!grants.some((g) => g.grantedTo === "nonexistent_user"), "a failed lookup grants nothing");
+
+  // Looking up a real username shows a preview (so the admin can visually
+  // confirm it's the right person) WITHOUT granting anything yet.
+  window.document.getElementById("grant-username").value = "new_friend";
+  window.document.getElementById("grant-lookup-btn").click();
+  await flush();
+  assert(/new_friend/.test(window.document.getElementById("grant-preview").textContent), "looking up a username shows a preview with that username, got: " + window.document.getElementById("grant-preview").textContent);
+  assert(/newfriend@example.com/.test(window.document.getElementById("grant-preview").textContent), "the preview shows the looked-up account's email");
+  assert(!grants.some((g) => g.grantedTo === "new_friend"), "looking up a username does not grant access by itself");
+
+  // Cancel clears the preview without granting.
+  window.document.getElementById("grant-cancel-btn").click();
+  assert(window.document.getElementById("grant-preview").innerHTML === "", "Cancel clears the lookup preview");
+  assert(!grants.some((g) => g.grantedTo === "new_friend"), "canceling a preview grants nothing");
+
+  // Looking it up again and confirming actually grants access.
+  window.document.getElementById("grant-lookup-btn").click();
+  await flush();
+  window.document.getElementById("grant-confirm-btn").click();
+  await flush();
+  assert(grants.some((g) => g.grantedTo === "new_friend"), "confirming the preview calls window.MG.grantFriendAccess");
   assert(/new_friend/.test(window.document.getElementById("grants-list").textContent), "admin panel list refreshes to show the newly granted friend");
+  assert(window.document.getElementById("grant-preview").innerHTML === "", "the preview clears after confirming");
 
   const revokeBtn = window.document.querySelector('.revoke-grant-btn[data-uid="u2"]');
   revokeBtn.click();

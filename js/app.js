@@ -1649,9 +1649,10 @@ function renderProfile() {
           </div>
         </div>
         <div class="recipe-actions">
-          <button class="btn" id="grant-btn">Grant free access</button>
+          <button class="btn" id="grant-lookup-btn">Look Up</button>
         </div>
         <p id="grant-status" class="hint"></p>
+        <div id="grant-preview"></div>
         <div id="grants-list" style="margin-top:10px;">Loading current list…</div>
       </div>` : ""}
       <div class="card">
@@ -1733,11 +1734,42 @@ function fileToAvatarDataUrl(file) {
 }
 
 function renderGrantRow(g) {
+  const avatarHtml = g.avatar
+    ? `<img src="${g.avatar}" alt="" class="grant-avatar">`
+    : `<span class="grant-avatar placeholder">${ICONS.person}</span>`;
   return `
     <div class="grant-row" data-uid="${g.uid}">
-      <span>${escapeHtml(g.grantedTo || g.uid)}</span>
+      <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+        ${avatarHtml}
+        <span>${escapeHtml(g.username || g.grantedTo || g.uid)}</span>
+      </div>
       <button type="button" class="remove-btn revoke-grant-btn" data-uid="${g.uid}" title="Revoke free access">×</button>
     </div>`;
+}
+
+// Shows the account a "Look Up" found, so the admin can visually confirm
+// (avatar + username + contact info) it's the right person before actually
+// granting them free access -- rather than granting based on a typed
+// username alone, which is easy to fat-finger or confuse with a
+// similarly-named account.
+function renderGrantPreview(profile) {
+  const avatarHtml = profile.avatar
+    ? `<img src="${profile.avatar}" alt="" class="grant-preview-avatar">`
+    : `<span class="grant-preview-avatar placeholder">${ICONS.person}</span>`;
+  return `
+    <div class="grant-preview-card">
+      ${avatarHtml}
+      <div class="grant-preview-details">
+        <div class="grant-preview-username">@${escapeHtml(profile.username)}</div>
+        ${profile.email ? `<p>${escapeHtml(profile.email)}</p>` : ""}
+        ${profile.contactInfo ? `<p>${escapeHtml(profile.contactInfo)}</p>` : ""}
+      </div>
+    </div>
+    <div class="recipe-actions">
+      <button class="btn" id="grant-confirm-btn">Confirm &amp; Grant Access</button>
+      <button class="btn secondary" id="grant-cancel-btn">Cancel</button>
+    </div>
+  `;
 }
 
 function wireProfile() {
@@ -1762,10 +1794,12 @@ function wireProfile() {
       }
     });
 
-    const grantBtn = document.getElementById("grant-btn");
-    if (grantBtn) {
+    const grantLookupBtn = document.getElementById("grant-lookup-btn");
+    if (grantLookupBtn) {
       const grantStatus = document.getElementById("grant-status");
+      const grantPreview = document.getElementById("grant-preview");
       const grantsList = document.getElementById("grants-list");
+      const usernameInput = document.getElementById("grant-username");
 
       function loadGrants() {
         window.MG.listGrants().then((list) => {
@@ -1790,21 +1824,43 @@ function wireProfile() {
       }
       loadGrants();
 
-      grantBtn.addEventListener("click", async () => {
-        const usernameInput = document.getElementById("grant-username");
+      // Two-step flow: "Look Up" fetches and shows the account's profile
+      // (avatar, username, contact info) so the admin can visually confirm
+      // it's the right person -- only "Confirm & Grant Access" on that
+      // preview actually grants anything.
+      grantLookupBtn.addEventListener("click", async () => {
         const username = usernameInput.value.trim();
         if (!username) { grantStatus.textContent = "Please enter a username."; return; }
-        grantBtn.disabled = true;
-        grantStatus.textContent = "Granting…";
+        grantPreview.innerHTML = "";
+        grantLookupBtn.disabled = true;
+        grantStatus.textContent = "Looking up…";
         try {
-          const granted = await window.MG.grantFriendAccess(username);
-          grantStatus.textContent = `${granted} now has free access.`;
-          usernameInput.value = "";
-          loadGrants();
+          const profile = await window.MG.lookupUserForGrant(username);
+          grantStatus.textContent = "";
+          grantPreview.innerHTML = renderGrantPreview(profile);
+          document.getElementById("grant-confirm-btn").addEventListener("click", async (e) => {
+            const confirmBtn = e.currentTarget;
+            confirmBtn.disabled = true;
+            grantStatus.textContent = "Granting…";
+            try {
+              const granted = await window.MG.grantFriendAccess(profile.username);
+              grantStatus.textContent = `${granted} now has free access.`;
+              usernameInput.value = "";
+              grantPreview.innerHTML = "";
+              loadGrants();
+            } catch (err) {
+              grantStatus.textContent = "Couldn't grant access: " + (err.message || err);
+              confirmBtn.disabled = false;
+            }
+          });
+          document.getElementById("grant-cancel-btn").addEventListener("click", () => {
+            grantPreview.innerHTML = "";
+            grantStatus.textContent = "";
+          });
         } catch (err) {
-          grantStatus.textContent = "Couldn't grant access: " + (err.message || err);
+          grantStatus.textContent = "Couldn't look that up: " + (err.message || err);
         }
-        grantBtn.disabled = false;
+        grantLookupBtn.disabled = false;
       });
     }
 

@@ -1,0 +1,84 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Users: each person's own profile (username, contact info, avatar) ----
+    match /users/{userId} {
+      // A user can always read their own profile; the admin can also read
+      // anyone's, so the "Grant free access" screen can show a person's
+      // avatar/username/contact info before free access is actually
+      // granted, and so the granted-list can show current avatars.
+      allow read: if request.auth != null
+        && (request.auth.uid == userId || request.auth.token.email == "maggie13a2z@gmail.com");
+      allow create, update: if request.auth != null && request.auth.uid == userId;
+
+      // ---- A user's own private recipes ----
+      match /recipes/{recipeId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // ---- A user's own meal plan (one doc per calendar day) ----
+      match /mealPlan/{date} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // ---- Username -> uid lookup, used to keep usernames unique ----
+    match /usernames/{username} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+
+    // ---- Free ("comped") access grants for friends & family -- admin-managed ----
+    match /grants/{uid} {
+      allow read: if request.auth != null
+        && (request.auth.uid == uid || request.auth.token.email == "maggie13a2z@gmail.com");
+      allow write: if request.auth != null && request.auth.token.email == "maggie13a2z@gmail.com";
+    }
+
+    // ---- Community Recipes: a public pool anyone can browse ----
+    match /communityRecipes/{docId} {
+      // Anyone can browse the shared pool, signed in or not.
+      allow read: if true;
+
+      // Only a signed-in user can publish/update their own recipe, and only
+      // under the id format the app uses (<their uid>_<their recipe id>) --
+      // this keeps someone from writing into another user's document.
+      allow create, update: if request.auth != null
+        && request.resource.data.authorUid == request.auth.uid
+        && docId == request.auth.uid + '_' + request.resource.data.sourceRecipeId;
+
+      // Only the original author (or the admin) can remove a shared copy.
+      allow delete: if request.auth != null
+        && (resource.data.authorUid == request.auth.uid
+            || request.auth.token.email == "maggie13a2z@gmail.com");
+
+      // ---- Comments left on this community recipe ----
+      match /comments/{commentId} {
+        // Anyone can read comments, signed in or not; only a signed-in user
+        // can post one, and only as themselves.
+        allow read: if true;
+        allow create: if request.auth != null
+          && request.resource.data.authorUid == request.auth.uid;
+
+        // A comment can be removed by whoever wrote it, by the author of
+        // the recipe it's on, or by the admin.
+        allow delete: if request.auth != null
+          && (resource.data.authorUid == request.auth.uid
+              || get(/databases/$(database)/documents/communityRecipes/$(docId)).data.authorUid == request.auth.uid
+              || request.auth.token.email == "maggie13a2z@gmail.com");
+      }
+    }
+
+    // ---- Reports filed against a community recipe ----
+    match /reports/{reportId} {
+      // Anyone signed in can file a report; no one (not even the admin) can
+      // read, edit, or delete report docs through the app itself -- for now
+      // review them directly in the Firebase console's Firestore Data tab.
+      allow create: if request.auth != null
+        && request.resource.data.reporterUid == request.auth.uid;
+      allow read, update, delete: if false;
+    }
+  }
+}
