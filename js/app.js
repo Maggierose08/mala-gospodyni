@@ -789,7 +789,7 @@ function renderMealPlanGrocery(weekStartParam) {
   const ingredientRows = ingredients.map((line) => {
     const key = ingredientKey(line.name, line.unit);
     const have = !!state.checked[key];
-    const amountText = [line.hasQty ? fmtNum(line.qty) : "", line.unit].filter(Boolean).join(" ");
+    const amountText = [line.hasQty ? fmtQty(line.qty) : "", line.unit].filter(Boolean).join(" ");
     return `
       <label class="grocery-row${have ? " have" : ""}" data-grocery-row-key="${escapeHtml(key)}">
         <input type="checkbox" class="grocery-chk" data-grocery-key="${escapeHtml(key)}" ${have ? "checked" : ""}>
@@ -899,7 +899,7 @@ function appendScaledIngredientRow(output, item, scaled) {
 
   const rightWrap = document.createElement("span");
   rightWrap.className = "scaled-amt";
-  rightWrap.textContent = `${fmtNum(scaled)} ${unitLabel}`;
+  rightWrap.textContent = `${fmtQty(scaled)} ${unitLabel}`;
 
   line.appendChild(left);
   line.appendChild(rightWrap);
@@ -1472,7 +1472,7 @@ function renderRecipeCreator() {
 
 function renderGroceryList(ingredients) {
   return ingredients.map((item, idx) => {
-    const qtyText = item.qty == null ? "" : `${fmtNum(item.qty)} `;
+    const qtyText = item.qty == null ? "" : `${fmtQty(item.qty)} `;
     const unitText = item.unit ? `${item.unit} ` : "";
     return `
       <label class="grocery-row" for="grocery-${idx}">
@@ -2067,9 +2067,12 @@ function wireCommunityDetail(id) {
       return;
     }
     const ingredientRows = (recipe.ingredients || []).length
-      ? recipe.ingredients.map((i) => `
-          <div class="scaled-row"><span>${escapeHtml(i.name || "(unnamed ingredient)")}</span><span class="scaled-amt">${i.qty || ""} ${i.unit || ""}</span></div>
-        `).join("")
+      ? recipe.ingredients.map((i) => {
+          const qtyText = i.qty === undefined || i.qty === null || i.qty === "" || isNaN(i.qty) ? "" : fmtQty(i.qty);
+          return `
+          <div class="scaled-row"><span>${escapeHtml(i.name || "(unnamed ingredient)")}</span><span class="scaled-amt">${qtyText} ${i.unit || ""}</span></div>
+        `;
+        }).join("")
       : `<p class="muted-msg">No ingredients listed.</p>`;
     body.innerHTML = `
       <h2>${escapeHtml(recipe.title || "(untitled recipe)")}</h2>

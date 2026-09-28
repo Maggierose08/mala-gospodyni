@@ -228,6 +228,50 @@ function fmtNum(n) {
   return rounded.toString();
 }
 
+// Cooking measurements are usually written as fractions (1/4 cup, 1/3 tsp)
+// rather than decimals, so an ingredient quantity that lands on -- or very
+// close to -- one of these common cooking fractions gets displayed that way
+// instead. Ingredient qty in the data stays a plain decimal (0.25, 0.33,
+// ...) so scaling math (scaleQty above) keeps working exactly; this only
+// controls how that number is *shown*. Denominators of 2, 3, 4, 6, and 8
+// cover what home recipes actually use -- anything that doesn't land close
+// to one of these (an odd scaled amount, for instance) still falls back to
+// a plain rounded decimal.
+//
+// This is deliberately a separate function from fmtNum above, not a
+// replacement for it: fmtNum is also used for unit-conversion results
+// (grams, mL, °F/°C, etc.) where a fraction would be wrong -- nobody writes
+// "12 1/2 g" for 12.5 grams of sugar. fmtQty is only for a quantity shown
+// in its own recipe unit (cup, tbsp, tsp, lb, oz, or a bare count).
+const COMMON_FRACTIONS = [
+  { value: 1 / 8, text: "1/8" },
+  { value: 1 / 6, text: "1/6" },
+  { value: 1 / 4, text: "1/4" },
+  { value: 1 / 3, text: "1/3" },
+  { value: 3 / 8, text: "3/8" },
+  { value: 1 / 2, text: "1/2" },
+  { value: 5 / 8, text: "5/8" },
+  { value: 2 / 3, text: "2/3" },
+  { value: 3 / 4, text: "3/4" },
+  { value: 5 / 6, text: "5/6" },
+  { value: 7 / 8, text: "7/8" },
+];
+const FRACTION_TOLERANCE = 0.01;
+
+function fmtQty(n) {
+  if (n === null || n === undefined || isNaN(n)) return "?";
+  const rounded = Math.round(n * 100) / 100;
+  const whole = Math.floor(rounded);
+  const frac = rounded - whole;
+  if (frac < 0.005) return whole.toString();
+  for (const f of COMMON_FRACTIONS) {
+    if (Math.abs(frac - f.value) <= FRACTION_TOLERANCE) {
+      return whole > 0 ? `${whole} ${f.text}` : f.text;
+    }
+  }
+  return rounded.toString();
+}
+
 // Popular volume/weight conversions people look up most while scaling a
 // recipe by hand — not tied to any specific recipe, just a quick-reference
 // list, the same spirit as OVEN_TEMP_QUICK_REF above. Computed from the
@@ -1465,7 +1509,7 @@ const SUBSTITUTION_CATEGORIES = [
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, SAFE_MEAT_TEMPS, POPULAR_CONVERSIONS, OVEN_TYPES, ALLERGEN_MAP,
-    findDensity, convertUnit, scaleQty, fToC, cToF, altitudeAdjustment, checkAllergens, findIngredientSubstitutions, fmtNum,
+    findDensity, convertUnit, scaleQty, fToC, cToF, altitudeAdjustment, checkAllergens, findIngredientSubstitutions, fmtNum, fmtQty,
     parseOcrText,
     RECIPE_TEMPLATES, detectDietaryFilters, parseServingsFromRequest, matchRecipeTemplates, generateRecipe,
     SUBSTITUTION_CATEGORIES,
