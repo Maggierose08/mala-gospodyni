@@ -412,4 +412,33 @@ window.MG = {
       createdAt: serverTimestamp(),
     });
   },
+
+  // ---- Comments on a community recipe ----
+  // A one-time fetch (like fetchCommunityRecipes above) rather than a live
+  // subscription -- only needed while that one recipe's detail page is open.
+  fetchComments: async (communityRecipeId) => {
+    const snap = await getDocs(collection(db, "communityRecipes", communityRecipeId, "comments"));
+    return snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.createdAt?.toMillis ? a.createdAt.toMillis() : 0) - (b.createdAt?.toMillis ? b.createdAt.toMillis() : 0));
+  },
+
+  postComment: async (communityRecipeId, text) => {
+    if (!currentUser) throw new Error("Please sign in to comment.");
+    if (!currentUser.username) throw new Error("Please set a username on your Profile page before commenting.");
+    await setDoc(doc(collection(db, "communityRecipes", communityRecipeId, "comments")), {
+      text,
+      authorUid: currentUser.uid,
+      authorUsername: currentUser.username,
+      createdAt: serverTimestamp(),
+    });
+  },
+
+  // Allowed for: the comment's own author, the recipe's author, or the
+  // admin -- enforced server-side by the Firestore security rules, this is
+  // just what decides whether the UI shows a delete button.
+  deleteComment: async (communityRecipeId, commentId) => {
+    if (!currentUser) throw new Error("Not signed in.");
+    await deleteDoc(doc(db, "communityRecipes", communityRecipeId, "comments", commentId));
+  },
 };

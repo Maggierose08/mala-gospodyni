@@ -562,11 +562,19 @@ async function main() {
     { id: "friend1_abc", title: "Golabki", servings: 6, ingredients: [{ qty: 1, unit: "lb", name: "ground beef" }], steps: "Roll and bake.", category: "main", authorUid: "friend1", authorUsername: "babcia_anna", sourceRecipeId: "abc" },
     { id: "friend2_xyz", title: "Fruit Salad", servings: 4, ingredients: [{ qty: 2, unit: "cup", name: "mixed fruit" }], steps: "Mix.", category: "", authorUid: "friend2", authorUsername: "ciocia_ewa", sourceRecipeId: "xyz" },
   ];
+  // Seeded with one comment from someone other than testchef (the signed-in
+  // user below) or Golabki's author, so the delete-button visibility rules
+  // (comment author / recipe author / admin) have something real to check.
+  let mockComments = {
+    friend1_abc: [{ id: "c_seed", text: "Made this last week, delicious!", authorUid: "friend3", authorUsername: "other_cook" }],
+  };
+  let mockCommentCounter = 0;
   const shareLog = [];
   const reportLog = [];
   window.MG = {
     ready: Promise.resolve(),
     getCurrentUser: () => mockUser,
+    isAdmin: () => !!mockUser.isAdmin,
     getCloudRecipes: () => mockCloudRecipes,
     upsertRecipe: async (r) => {
       const idx = mockCloudRecipes.findIndex((x) => x.id === r.id);
@@ -588,6 +596,14 @@ async function main() {
     getCloudMealPlan: () => mockCloudMealPlan,
     upsertMealPlanEntry: async (date, recipeId) => { mockCloudMealPlan[date] = recipeId; },
     deleteMealPlanEntryCloud: async (date) => { delete mockCloudMealPlan[date]; },
+    fetchComments: async (id) => (mockComments[id] || []).slice(),
+    postComment: async (id, text) => {
+      if (!mockComments[id]) mockComments[id] = [];
+      mockComments[id].push({ id: "c_" + (mockCommentCounter++), text, authorUid: mockUser.uid, authorUsername: mockUser.username });
+    },
+    deleteComment: async (id, commentId) => {
+      mockComments[id] = (mockComments[id] || []).filter((c) => c.id !== commentId);
+    },
   };
 
   // New recipe form shows the Share checkbox once signed in.
@@ -674,6 +690,30 @@ async function main() {
   await flush();
   assert(reportLog.some((r) => r.id === communityId && r.reason === "wrong ingredients"), "submitting a report calls window.MG.reportCommunityRecipe with the reason");
   assert(/reported/i.test(window.document.getElementById("report-box").textContent), "report box shows a thank-you confirmation after submitting");
+
+  // ---- Comments on a community recipe ----
+  go("#/community/" + communityId);
+  await flush();
+  assert(!!window.document.getElementById("comment-input"), "signed-in users get a comment input on a community recipe");
+  assert(/other_cook/.test(window.document.getElementById("comments-list").textContent), "existing comments show their author");
+  assert(/delicious/.test(window.document.getElementById("comments-list").textContent), "existing comments show their text");
+  const otherCommentRow = window.document.querySelector('[data-comment-id="c_seed"]');
+  assert(!!otherCommentRow && !otherCommentRow.querySelector("[data-delete-comment]"), "a comment from someone else (not you or the recipe's author) has no delete button");
+
+  window.document.getElementById("comment-input").value = "This turned out great, thanks for sharing!";
+  window.document.getElementById("post-comment-btn").click();
+  await flush();
+  assert(mockComments[communityId].some((c) => c.text === "This turned out great, thanks for sharing!" && c.authorUid === mockUser.uid), "posting a comment calls window.MG.postComment as the signed-in user");
+  // mockUser.username was changed to "new_handle" by the earlier Profile test.
+  assert(new RegExp(mockUser.username).test(window.document.getElementById("comments-list").textContent), "the newly posted comment appears in the list right away");
+
+  const ownCommentId = mockComments[communityId].find((c) => c.authorUid === mockUser.uid).id;
+  const ownCommentRow = window.document.querySelector(`[data-comment-id="${ownCommentId}"]`);
+  assert(!!ownCommentRow && !!ownCommentRow.querySelector("[data-delete-comment]"), "your own comment shows a delete button");
+
+  ownCommentRow.querySelector("[data-delete-comment]").click();
+  await flush();
+  assert(!mockComments[communityId].some((c) => c.id === ownCommentId), "deleting your own comment calls window.MG.deleteComment and removes it");
 
   // ---- Meal Planning (signed in, cloud sync via mocked window.MG) ----
   go("#/meal-plan");

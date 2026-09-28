@@ -2082,6 +2082,18 @@ function wireCommunityDetail(id) {
         <button class="btn secondary" id="report-recipe-btn">Report this recipe</button>
       </div>
       <div id="report-box"></div>
+
+      <label style="margin-top:14px;">Comments</label>
+      <div id="comments-list"><p class="muted-msg">Loading comments…</p></div>
+      ${isSignedIn() ? `
+        <div class="field" style="margin-top:10px;">
+          <textarea id="comment-input" placeholder="Share a tip, a substitution that worked, how it turned out…" style="min-height:70px;"></textarea>
+        </div>
+        <div class="recipe-actions">
+          <button class="btn" id="post-comment-btn">Post Comment</button>
+        </div>
+        <div id="comment-status" class="hint"></div>
+      ` : `<p class="hint"><a href="#/profile">Sign in</a> to leave a comment.</p>`}
     `;
 
     document.getElementById("save-copy-btn").addEventListener("click", async (e) => {
@@ -2127,6 +2139,67 @@ function wireCommunityDetail(id) {
         }
       });
     });
+
+    // ---- Comments ----
+    const currentUser = hasCloud() ? window.MG.getCurrentUser() : null;
+    function canDeleteComment(comment) {
+      if (!currentUser) return false;
+      return comment.authorUid === currentUser.uid
+        || recipe.authorUid === currentUser.uid
+        || window.MG.isAdmin();
+    }
+
+    function loadComments() {
+      const listEl = document.getElementById("comments-list");
+      window.MG.fetchComments(recipe.id).then((comments) => {
+        listEl.innerHTML = comments.length
+          ? comments.map((c) => `
+              <div class="grant-row" data-comment-id="${c.id}">
+                <span><strong>@${escapeHtml(c.authorUsername || "unknown")}</strong> — ${escapeHtml(c.text || "")}</span>
+                ${canDeleteComment(c) ? `<button type="button" class="remove-btn" data-delete-comment="${c.id}" title="Delete comment">×</button>` : ""}
+              </div>`).join("")
+          : `<p class="muted-msg">No comments yet — be the first to leave one!</p>`;
+        listEl.querySelectorAll("[data-delete-comment]").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            btn.disabled = true;
+            try {
+              await window.MG.deleteComment(recipe.id, btn.getAttribute("data-delete-comment"));
+              loadComments();
+            } catch (err) {
+              alert("Sorry, that comment couldn't be deleted: " + (err.message || err));
+              btn.disabled = false;
+            }
+          });
+        });
+      }).catch((err) => {
+        console.error("Could not load comments", err);
+        listEl.innerHTML = `<p class="muted-msg">Comments couldn't be loaded right now.</p>`;
+      });
+    }
+    loadComments();
+
+    const postBtn = document.getElementById("post-comment-btn");
+    if (postBtn) {
+      postBtn.addEventListener("click", async () => {
+        const input = document.getElementById("comment-input");
+        const statusEl = document.getElementById("comment-status");
+        const text = input.value.trim();
+        if (!text) { statusEl.textContent = "Write something first."; return; }
+        postBtn.disabled = true;
+        postBtn.textContent = "Posting…";
+        try {
+          await window.MG.postComment(recipe.id, text);
+          input.value = "";
+          statusEl.textContent = "";
+          loadComments();
+        } catch (err) {
+          statusEl.textContent = err.message || "Sorry, that comment couldn't be posted.";
+        } finally {
+          postBtn.disabled = false;
+          postBtn.textContent = "Post Comment";
+        }
+      });
+    }
   }).catch((err) => {
     console.error("Could not load community recipe", err);
     body.innerHTML = `<p class="muted-msg">${escapeHtml(err.message || "Sorry, that recipe couldn't be loaded right now.")}</p>`;
