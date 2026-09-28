@@ -1449,7 +1449,7 @@ const SUBSTITUTION_CATEGORIES = [
   {
     key: "baking",
     label: "Baking & Leavening",
-    icon: "cupcake",
+    icon: "whisk",
     color: "butter",
     entries: [
       { need: "Buttermilk", sub: "1 cup milk + 1 tbsp lemon juice or vinegar", note: "Let it sit 5–10 minutes until slightly thickened." },
@@ -1463,7 +1463,7 @@ const SUBSTITUTION_CATEGORIES = [
   {
     key: "dairy-eggs",
     label: "Dairy & Eggs",
-    icon: "bowl",
+    icon: "egg",
     color: "blush",
     entries: [
       { need: "Eggs, for binding", sub: "1 tbsp ground flaxseed + 3 tbsp water, per egg", note: "Stir and let it sit about 5 minutes to gel." },
@@ -1477,7 +1477,7 @@ const SUBSTITUTION_CATEGORIES = [
   {
     key: "produce",
     label: "Produce & Aromatics",
-    icon: "leaf",
+    icon: "carrot",
     color: "",
     entries: [
       { need: "Fresh garlic", sub: "1/4 tsp garlic powder per clove", note: "" },
@@ -1491,7 +1491,7 @@ const SUBSTITUTION_CATEGORIES = [
   {
     key: "pantry",
     label: "Pantry & Sauces",
-    icon: "utensils",
+    icon: "jar",
     color: "blush",
     entries: [
       { need: "Cornstarch, for thickening", sub: "Twice the amount of all-purpose flour", note: "" },

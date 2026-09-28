@@ -4,8 +4,12 @@
 // ============================================================
 
 // ---------- Simple line-drawing icons (inline SVG, sage/pastel friendly) ----------
+// Every icon below is used in exactly one place in the app (one main
+// home-screen folder, or one inner tab within a folder) -- so no two tiles,
+// anywhere, ever show the same symbol. When adding a new folder or tab,
+// give it its own new icon here rather than reusing one already assigned
+// elsewhere, to keep that true.
 const ICONS = {
-  pot: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10h16v4a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6v-4Z"/><path d="M2 10h20"/><path d="M7 10V7a2 2 0 0 1 2-2M17 10V7a2 2 0 0 0-2-2"/><path d="M9 3.5h1M14 3.5h1"/></svg>`,
   scale: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M5 7h14"/><path d="M5 7 2 13a3.5 3.5 0 0 0 6 0L5 7Z"/><path d="M19 7l-3 6a3.5 3.5 0 0 0 6 0l-3-6Z"/><path d="M8 21h8"/></svg>`,
   leaf: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4C10 4 4 10 4 18v2h2c8 0 14-6 14-16Z"/><path d="M6 20c2-6 6-10 12-12"/></svg>`,
   thermo: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a2 2 0 0 0-2 2v9.3a4 4 0 1 0 4 0V5a2 2 0 0 0-2-2Z"/><path d="M12 8v6"/></svg>`,
@@ -15,7 +19,6 @@ const ICONS = {
   book: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h6v18H6a2 2 0 0 1-2-2V5Z"/><path d="M20 5a2 2 0 0 0-2-2h-6v18h6a2 2 0 0 0 2-2V5Z"/></svg>`,
   swap: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>`,
   camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3.3"/></svg>`,
-  wand: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 15 9"/><path d="M17 3v3M22 8h-3M17.5 5.5l-2 2"/><path d="M6 3v3M9 5H6M6.5 3.5l-1 1"/><path d="M19 15v3M21 18h-3"/></svg>`,
   utensils: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 2v7a2 2 0 0 0 2 2v11"/><path d="M7 2v5M10 2v5"/><path d="M17 2c-1.7 0-3 2-3 5s1.3 5 3 5v10"/></svg>`,
   cupcake: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10h10l-1.4 8.8a2 2 0 0 1-2 1.7h-3.2a2 2 0 0 1-2-1.7L7 10Z"/><path d="M8 10a4 4 0 0 1 8 0"/><path d="M12 3v3M9.3 4.6l1.2 1.3M14.7 4.6l-1.2 1.3"/></svg>`,
   bowl: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18a9 9 0 0 1-18 0Z"/><path d="M12 11V8M8.5 11l-1-2.5M15.5 11l1-2.5"/></svg>`,
@@ -23,6 +26,23 @@ const ICONS = {
   folder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>`,
   mountain: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19 9.5 6l4 6.5L16 9l5 10Z"/><path d="M13.2 11.3 11 15h6.5"/></svg>`,
   calendar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M7.5 14h1M11.5 14h1M15.5 14h1M7.5 17.5h1M11.5 17.5h1"/></svg>`,
+  // ---- Added for the icon-uniqueness pass: a notebook page + pencil for
+  // Recipe Creator, plus one fresh icon per inner tab that used to share a
+  // symbol with its own parent folder or with another tab (see the folder
+  // color per tab below for exactly which spot each one belongs to).
+  notebookPencil: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="13" height="18" rx="1.5"/><path d="M6.5 8h6M6.5 11.5h6M6.5 15h4"/><path d="M15.5 20.5 21 15l-2.3-2.3-5.5 5.5-.7 3z"/><path d="M18.7 12.7 21 15"/></svg>`,
+  ruler: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="8" width="20" height="8" rx="1"/><path d="M6 8v3M10 8v2M14 8v3M18 8v2"/></svg>`,
+  calculator: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2.5" width="14" height="19" rx="2"/><path d="M8 6.5h8"/><circle cx="8.3" cy="11" r="0.6" fill="currentColor" stroke="none"/><circle cx="12" cy="11" r="0.6" fill="currentColor" stroke="none"/><circle cx="15.7" cy="11" r="0.6" fill="currentColor" stroke="none"/><circle cx="8.3" cy="14.5" r="0.6" fill="currentColor" stroke="none"/><circle cx="12" cy="14.5" r="0.6" fill="currentColor" stroke="none"/><circle cx="15.7" cy="14.5" r="0.6" fill="currentColor" stroke="none"/><circle cx="8.3" cy="18" r="0.6" fill="currentColor" stroke="none"/><circle cx="12" cy="18" r="0.6" fill="currentColor" stroke="none"/><circle cx="15.7" cy="18" r="0.6" fill="currentColor" stroke="none"/></svg>`,
+  search: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.3 15.3 21 21"/></svg>`,
+  approx: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0"/><path d="M3 16c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0"/></svg>`,
+  flame: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c-1 3-4 4.5-4 8.5a4 4 0 0 0 8 0c0-1.5-.7-2.3-1.2-3 .3 1.6-.6 2.5-1.3 2.5-1 0-1-1-.7-1.8C13.4 6.5 13 4 12 2Z"/><path d="M8.5 14a3.5 3.5 0 0 0 7 0"/></svg>`,
+  clipboard: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2.5" width="6" height="3" rx="1"/><path d="M8 10h8M8 13.5h8M8 17h5"/></svg>`,
+  exchange: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 20V6M8 6 4.5 9.5M8 6l3.5 3.5"/><path d="M16 4v14M16 18l3.5-3.5M16 18l-3.5-3.5"/></svg>`,
+  drumstick: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15c-2.5 2.5-5 3-6 2s.5-3.5 3-6c2-2 5-5 7.5-5.5a3 3 0 0 1 4 4C15 12 12.5 15.5 9 15Z"/><path d="M4.5 19.5 8 16"/></svg>`,
+  whisk: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v7"/><path d="M12 10c-3 0-4.5 2-4.5 4.5S9 19 12 19s4.5-2 4.5-4.5S15 10 12 10Z"/><path d="M9 10.5c0-2.5.5-5 1-6.5M15 10.5c0-2.5-.5-5-1-6.5"/></svg>`,
+  egg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C8 8 6 12.5 6 15.5a6 6 0 0 0 12 0C18 12.5 16 8 12 3Z"/></svg>`,
+  carrot: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 13c4-4 8-5.5 9.5-4S19 13 15 17c-2.5 2.5-5.5 3-7 1.5S8.5 15.5 11 13Z"/><path d="M9 19l-2.5 2.5M13 4.5 15 3M11.5 6 13 4M15.5 6l1-1.5"/></svg>`,
+  jar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8v3.2c1.2.6 2 1.9 2 3.3v9a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 6 18.5v-9c0-1.4.8-2.7 2-3.3V3Z"/><path d="M6.5 12h11"/></svg>`,
 };
 
 // Recipes are organized into these folders (plus an "uncategorized" bucket
@@ -363,15 +383,15 @@ function pageHeader(title, backRoute) {
 function renderHome() {
   return `
     <div class="home-grid">
-      <div class="home-box" data-route="#/recipes">${ICONS.pot}<span>Recipes</span></div>
+      <div class="home-box" data-route="#/recipes">${ICONS.book}<span>Recipes</span></div>
       <div class="home-box blush" data-route="#/scale">${ICONS.scale}<span>Scale Converter</span></div>
       <div class="home-box butter" data-route="#/allergen">${ICONS.leaf}<span>Allergen Checker</span></div>
       <div class="home-box" data-route="#/temp">${ICONS.thermo}<span>Temperature Converter</span></div>
-      <div class="home-box blush" data-route="#/create">${ICONS.wand}<span>Recipe Creator</span></div>
+      <div class="home-box blush" data-route="#/create">${ICONS.notebookPencil}<span>Recipe Creator</span></div>
       <div class="home-box butter" data-route="#/meal-plan">${ICONS.calendar}<span>Meal Planning</span></div>
     </div>
     <div class="quick-links">
-      <div class="quick-link" data-route="#/community">${ICONS.book} Community Recipes</div>
+      <div class="quick-link" data-route="#/community">${ICONS.people} Community Recipes</div>
       <div class="quick-link" data-route="#/substitutions">${ICONS.swap} Substitution Tips</div>
     </div>
   `;
@@ -952,8 +972,8 @@ function renderScaleHome() {
   return `
     ${pageHeader("Scale Converter")}
     <div class="home-grid">
-      <div class="home-box butter" data-route="#/scale/popular">${ICONS.book}<span>Popular Conversions</span></div>
-      <div class="home-box blush" data-route="#/scale/convert">${ICONS.scale}<span>Convert Your Own</span></div>
+      <div class="home-box butter" data-route="#/scale/popular">${ICONS.ruler}<span>Popular Conversions</span></div>
+      <div class="home-box blush" data-route="#/scale/convert">${ICONS.calculator}<span>Convert Your Own</span></div>
     </div>
   `;
 }
@@ -1151,8 +1171,8 @@ function renderAllergenHome() {
   return `
     ${pageHeader("Allergen Checker")}
     <div class="home-grid">
-      <div class="home-box butter" data-route="#/allergen/check">${ICONS.leaf}<span>Check Your Own Ingredients</span></div>
-      <div class="home-box blush" data-route="#/allergen/measurements">${ICONS.swap}<span>Measurement Differences</span></div>
+      <div class="home-box butter" data-route="#/allergen/check">${ICONS.search}<span>Check Your Own Ingredients</span></div>
+      <div class="home-box blush" data-route="#/allergen/measurements">${ICONS.approx}<span>Measurement Differences</span></div>
     </div>
   `;
 }
@@ -1257,11 +1277,11 @@ function renderTempHome() {
   return `
     ${pageHeader("Temperature Converter")}
     <div class="home-grid">
-      <div class="home-box butter" data-route="#/temp/oven">${ICONS.thermo}<span>Oven Type</span></div>
-      <div class="home-box blush" data-route="#/temp/quick-ref">${ICONS.book}<span>Quick Reference</span></div>
-      <div class="home-box" data-route="#/temp/convert">${ICONS.swap}<span>Convert Any Temperature</span></div>
+      <div class="home-box butter" data-route="#/temp/oven">${ICONS.flame}<span>Oven Type</span></div>
+      <div class="home-box blush" data-route="#/temp/quick-ref">${ICONS.clipboard}<span>Quick Reference</span></div>
+      <div class="home-box" data-route="#/temp/convert">${ICONS.exchange}<span>Convert Any Temperature</span></div>
       <div class="home-box blush" data-route="#/temp/altitude">${ICONS.mountain}<span>Altitude Adjustment</span></div>
-      <div class="home-box butter" data-route="#/temp/safe-meat">${ICONS.skewer}<span>Safe Meat Temperatures</span></div>
+      <div class="home-box butter" data-route="#/temp/safe-meat">${ICONS.drumstick}<span>Safe Meat Temperatures</span></div>
     </div>
   `;
 }
