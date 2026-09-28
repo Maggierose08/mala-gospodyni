@@ -303,6 +303,7 @@ button.btn.danger:hover { background: #93433d; }
   cursor: pointer;
 }
 .recipe-card:hover { border-color: var(--sage); }
+.recipe-card.selected { border-color: var(--sage); background: #f6faf6; }
 .recipe-card .rc-title { font-weight: 700; color: var(--ink); }
 .recipe-card .rc-meta { font-size: 0.82rem; color: var(--muted); }
 
@@ -417,6 +418,16 @@ button.btn.danger:hover { background: #93433d; }
   width: 18px; height: 18px; flex-shrink: 0; accent-color: var(--sage);
 }
 .grocery-row.have .grocery-text { text-decoration: line-through; color: var(--muted); }
+
+/* ---------- Meal Planning: week navigation ---------- */
+.week-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.week-nav .link-btn { margin-top: 0; }
+.week-label { font-weight: 700; color: var(--sage-dark); font-size: 0.92rem; }
 
 /* ---------- Recipe folders (Main Courses / Desserts / Sides / Appetizers) ---------- */
 .category-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }

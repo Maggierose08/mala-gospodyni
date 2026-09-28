@@ -5,9 +5,11 @@
 // modern `import` syntax straight from Firebase's CDN — no build step needed.
 // The rest of the app (logic.js, app.js) is plain, non-module script, so
 // this file exposes what they need on `window.MG` plus two events:
-//   "mg-auth-changed"    — fired whenever sign-in state changes
-//   "mg-recipes-changed" — fired whenever the signed-in user's cloud
-//                          recipes are updated (by this device or another)
+//   "mg-auth-changed"      — fired whenever sign-in state changes
+//   "mg-recipes-changed"   — fired whenever the signed-in user's cloud
+//                            recipes are updated (by this device or another)
+//   "mg-meal-plan-changed" — fired whenever the signed-in user's cloud
+//                            meal plan is updated (by this device or another)
 // ============================================================
 
 import {
@@ -51,8 +53,8 @@ const db = initializeFirestore(app, { localCache: persistentLocalCache() });
 let currentUser = null; // { uid, email, username } | null
 let cloudRecipes = [];
 let recipesUnsubscribe = null;
-let cloudNotes = [];
-let notesUnsubscribe = null;
+let cloudMealPlan = {}; // { "<yyyy-mm-dd>": "<recipeId>", ... }
+let mealPlanUnsubscribe = null;
 let resolveReady;
 const ready = new Promise((resolve) => { resolveReady = resolve; });
 
@@ -64,10 +66,11 @@ function recipeDocRef(uid, recipeId) {
   return doc(db, "users", uid, "recipes", recipeId);
 }
 
-// A user's own private notes -- same shape/rules as their private recipes,
-// just a separate subcollection so the two lists never mix.
-function noteDocRef(uid, noteId) {
-  return doc(db, "users", uid, "notes", noteId);
+// A user's own meal plan: one doc per calendar day, holding the recipe
+// planned for it -- same shape/rules as their private recipes, just a
+// separate subcollection so the two lists never mix.
+function mealPlanDocRef(uid, date) {
+  return doc(db, "users", uid, "mealPlan", date);
 }
 
 // A shared/public copy of a recipe lives in its own top-level collection
@@ -95,25 +98,27 @@ function subscribeToRecipes(uid) {
   );
 }
 
-function subscribeToNotes(uid) {
-  if (notesUnsubscribe) notesUnsubscribe();
-  notesUnsubscribe = onSnapshot(
-    collection(db, "users", uid, "notes"),
+function subscribeToMealPlan(uid) {
+  if (mealPlanUnsubscribe) mealPlanUnsubscribe();
+  mealPlanUnsubscribe = onSnapshot(
+    collection(db, "users", uid, "mealPlan"),
     (snap) => {
-      cloudNotes = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      dispatch("mg-notes-changed", { notes: cloudNotes });
+      const map = {};
+      snap.docs.forEach((d) => { map[d.id] = d.data().recipeId; });
+      cloudMealPlan = map;
+      dispatch("mg-meal-plan-changed", { mealPlan: cloudMealPlan });
     },
     (err) => {
-      console.error("Notes sync error", err);
+      console.error("Meal plan sync error", err);
     }
   );
 }
 
 onAuthStateChanged(auth, async (user) => {
   if (recipesUnsubscribe) { recipesUnsubscribe(); recipesUnsubscribe = null; }
-  if (notesUnsubscribe) { notesUnsubscribe(); notesUnsubscribe = null; }
+  if (mealPlanUnsubscribe) { mealPlanUnsubscribe(); mealPlanUnsubscribe = null; }
   cloudRecipes = [];
-  cloudNotes = [];
+  cloudMealPlan = {};
 
   if (user) {
     let username = user.displayName || "";
@@ -145,7 +150,7 @@ onAuthStateChanged(auth, async (user) => {
     }
     currentUser = { uid: user.uid, email: user.email, username, contactInfo, avatar, isAdmin, hasFreeAccess };
     subscribeToRecipes(user.uid);
-    subscribeToNotes(user.uid);
+    subscribeToMealPlan(user.uid);
   } else {
     currentUser = null;
   }
@@ -198,7 +203,7 @@ window.MG = {
   ready,
   getCurrentUser: () => currentUser,
   getCloudRecipes: () => cloudRecipes,
-  getCloudNotes: () => cloudNotes,
+  getCloudMealPlan: () => cloudMealPlan,
   isAdmin: () => !!(currentUser && currentUser.isAdmin),
   hasFreeAccess: () => !!(currentUser && currentUser.hasFreeAccess),
 
@@ -346,18 +351,17 @@ window.MG = {
     }
   },
 
-  upsertNote: async (note) => {
+  upsertMealPlanEntry: async (date, recipeId) => {
     if (!currentUser) throw new Error("Not signed in.");
-    await setDoc(noteDocRef(currentUser.uid, note.id), {
-      title: note.title || "",
-      body: note.body || "",
+    await setDoc(mealPlanDocRef(currentUser.uid, date), {
+      recipeId,
       updatedAt: serverTimestamp(),
     });
   },
 
-  deleteNoteCloud: async (noteId) => {
+  deleteMealPlanEntryCloud: async (date) => {
     if (!currentUser) throw new Error("Not signed in.");
-    await deleteDoc(noteDocRef(currentUser.uid, noteId));
+    await deleteDoc(mealPlanDocRef(currentUser.uid, date));
   },
 
   // ---- Community Recipes: a public, shared pool anyone can browse ----

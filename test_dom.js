@@ -393,44 +393,91 @@ async function main() {
   stillThere = JSON.parse(window.localStorage.getItem("mg_recipes_v1"));
   assert(!stillThere.some((r) => r.id === recipeId), "delete with confirmation removes the recipe");
 
-  // ---- Notes (local, signed out) ----
-  go("#/notes");
-  assert(/No notes yet/.test(window.document.getElementById("view").textContent), "empty notes list shows message");
-  assert(/Sign in.*sync/i.test(window.document.getElementById("view").textContent), "notes list shows local-only sync hint when signed out");
+  // ---- Meal Planning (local, signed out) ----
+  go("#/meal-plan");
+  assert(/No meal planned yet/.test(window.document.getElementById("view").textContent), "week view shows a placeholder for days with nothing planned");
+  assert(/Sign in.*sync/i.test(window.document.getElementById("view").textContent), "meal plan shows local-only sync hint when signed out");
+  assert(window.document.querySelectorAll("[data-open-mealplan-day]").length === 7, "week view shows all 7 days");
+  assert(/Today/.test(window.document.getElementById("view").textContent), "week view labels today's box");
 
-  go("#/notes/new");
-  window.document.getElementById("note-title").value = "Grocery reminders";
-  window.document.getElementById("note-body").value = "Buy extra butter for the holidays, and check the spice drawer for cinnamon.";
-  window.document.getElementById("save-note-btn").click();
+  // Save a fresh recipe to plan a meal with (independent of whatever earlier
+  // tests left in localStorage).
+  go("#/recipe/new");
+  window.document.getElementById("recipe-title").value = "Test Meal Plan Soup";
+  window.document.getElementById("orig-servings").value = "4";
+  const mpRows = window.document.querySelectorAll(".ing-row");
+  mpRows[0].querySelector(".ing-qty").value = "2";
+  mpRows[0].querySelector(".ing-unit").value = "cup";
+  mpRows[0].querySelector(".ing-name").value = "chicken broth";
+  window.document.getElementById("save-recipe-btn").click();
   await flush();
-  const savedNotes = JSON.parse(window.localStorage.getItem("mg_notes_v1"));
-  assert(Array.isArray(savedNotes) && savedNotes.length === 1, "note persisted to localStorage");
-  assert(savedNotes[0].title === "Grocery reminders", "saved note keeps its title");
-  const noteId = savedNotes[0].id;
+  const mpRecipes = JSON.parse(window.localStorage.getItem("mg_recipes_v1"));
+  const soupRecipe = mpRecipes.find((r) => r.title === "Test Meal Plan Soup");
+  assert(!!soupRecipe, "meal-plan test recipe saved");
 
-  go("#/notes");
-  assert(/Grocery reminders/.test(window.document.getElementById("view").textContent), "notes list shows the saved note's title");
-  assert(/Buy extra butter/.test(window.document.getElementById("view").textContent), "notes list shows a preview of the note's body");
-
-  go("#/notes/edit/" + noteId);
-  assert(window.document.getElementById("note-title").value === "Grocery reminders", "edit form prefills existing title");
-  assert(/Buy extra butter/.test(window.document.getElementById("note-body").value), "edit form prefills existing body");
-
-  // The earlier recipe-delete test left window.confirm monkey-patched to
-  // always return true, so explicitly reset it here rather than relying on
-  // jsdom's own (unpatched) default of false.
-  window.confirm = () => false;
-  window.document.getElementById("delete-note-btn").click();
+  // Plan it for today via the day picker.
+  const todayISO = window.isoDate(new Date());
+  go("#/meal-plan/day/" + todayISO);
+  const soupCard = Array.from(window.document.querySelectorAll("[data-pick-mealplan]")).find((n) => n.getAttribute("data-pick-mealplan") === soupRecipe.id);
+  assert(!!soupCard, "day picker lists the saved test recipe");
+  soupCard.click();
   await flush();
-  let stillThereNotes = JSON.parse(window.localStorage.getItem("mg_notes_v1"));
-  assert(stillThereNotes.some((n) => n.id === noteId), "delete without confirmation leaves note intact");
+  const wsISO = window.isoDate(window.startOfWeek(new Date()));
+  assert(window.location.hash === "#/meal-plan/week/" + wsISO, "picking a recipe redirects back to that day's week view");
 
-  window.confirm = () => true;
-  window.document.getElementById("delete-note-btn").click();
+  const mpMap = JSON.parse(window.localStorage.getItem("mg_meal_plan_v1"));
+  assert(mpMap[todayISO] === soupRecipe.id, "meal plan persisted to localStorage");
+
+  go("#/meal-plan");
+  assert(new RegExp(soupRecipe.title).test(window.document.getElementById("view").textContent), "week view shows the planned recipe's title");
+
+  // ---- Grocery List (built from the planned recipe) ----
+  go("#/meal-plan/grocery/" + wsISO);
+  assert(/chicken broth/.test(window.document.getElementById("view").textContent), "grocery list includes the planned recipe's ingredient");
+  assert(/2 cup/.test(window.document.getElementById("view").textContent), "grocery list shows the ingredient's quantity and unit");
+
+  const groceryCb = window.document.querySelector("[data-grocery-key]");
+  assert(!!groceryCb, "grocery list renders a checkbox for the ingredient");
+  groceryCb.checked = true;
+  groceryCb.dispatchEvent(new window.Event("change"));
+  let groceryState = JSON.parse(window.localStorage.getItem("mg_grocery_v1"));
+  assert(groceryState[wsISO].checked[window.ingredientKey("chicken broth", "cup")] === true, "checking a grocery item persists to localStorage");
+  assert(groceryCb.closest(".grocery-row").classList.contains("have"), "checked grocery item gets the strikethrough 'have' class");
+
+  // Add a manual extra item.
+  window.document.getElementById("grocery-extra-input").value = "paper towels";
+  window.document.getElementById("grocery-add-btn").click();
   await flush();
-  stillThereNotes = JSON.parse(window.localStorage.getItem("mg_notes_v1"));
-  assert(!stillThereNotes.some((n) => n.id === noteId), "delete with confirmation removes the note");
-  window.confirm = () => false; // restore jsdom's default for later tests
+  groceryState = JSON.parse(window.localStorage.getItem("mg_grocery_v1"));
+  assert(groceryState[wsISO].extra.some((x) => x.text === "paper towels"), "adding an extra item persists to localStorage");
+  assert(/paper towels/.test(window.document.getElementById("view").textContent), "grocery list shows the newly added extra item");
+
+  const removeBtn = window.document.querySelector("[data-remove-extra]");
+  assert(!!removeBtn, "extra item shows a remove button");
+  removeBtn.click();
+  await flush();
+  groceryState = JSON.parse(window.localStorage.getItem("mg_grocery_v1"));
+  assert(!groceryState[wsISO].extra.some((x) => x.text === "paper towels"), "removing an extra item removes it from localStorage");
+
+  // ---- Clear the day ----
+  go("#/meal-plan/day/" + todayISO);
+  assert(!!window.document.getElementById("meal-plan-clear-btn"), "day picker shows a Clear button once a recipe is planned");
+  window.document.getElementById("meal-plan-clear-btn").click();
+  await flush();
+  const mpMapAfterClear = JSON.parse(window.localStorage.getItem("mg_meal_plan_v1"));
+  assert(!mpMapAfterClear[todayISO], "clearing a day removes it from the meal plan");
+
+  // ---- Week navigation ----
+  // Each check starts from a fresh go() render, rather than chaining clicks,
+  // since a button's own location.hash= assignment isn't guaranteed to
+  // trigger a hashchange-driven re-render inside jsdom the way go() does.
+  go("#/meal-plan/week/" + wsISO);
+  window.document.getElementById("meal-plan-next-week").click();
+  assert(window.location.hash === "#/meal-plan/week/" + window.isoDate(window.addDays(window.startOfWeek(new Date()), 7)), "Next week button navigates forward 7 days");
+
+  go("#/meal-plan/week/" + wsISO);
+  window.document.getElementById("meal-plan-prev-week").click();
+  assert(window.location.hash === "#/meal-plan/week/" + window.isoDate(window.addDays(window.startOfWeek(new Date()), -7)), "Previous week button navigates back 7 days");
 
   // ---- Stub pages don't crash ----
   ["#/friends", "#/settings"].forEach((h) => {
@@ -510,7 +557,7 @@ async function main() {
   // copy, and reporting — all via a mocked window.MG, since real Firebase
   // can't run inside jsdom ----
   let mockCloudRecipes = [];
-  let mockCloudNotes = [];
+  let mockCloudMealPlan = {};
   let communityPool = [
     { id: "friend1_abc", title: "Golabki", servings: 6, ingredients: [{ qty: 1, unit: "lb", name: "ground beef" }], steps: "Roll and bake.", category: "main", authorUid: "friend1", authorUsername: "babcia_anna", sourceRecipeId: "abc" },
     { id: "friend2_xyz", title: "Fruit Salad", servings: 4, ingredients: [{ qty: 2, unit: "cup", name: "mixed fruit" }], steps: "Mix.", category: "", authorUid: "friend2", authorUsername: "ciocia_ewa", sourceRecipeId: "xyz" },
@@ -538,12 +585,9 @@ async function main() {
     fetchCommunityRecipes: async () => communityPool.slice(),
     reportCommunityRecipe: async (id, reason) => { reportLog.push({ id, reason }); },
     migrateLocalToCloud: async () => {},
-    getCloudNotes: () => mockCloudNotes,
-    upsertNote: async (n) => {
-      const idx = mockCloudNotes.findIndex((x) => x.id === n.id);
-      if (idx >= 0) mockCloudNotes[idx] = n; else mockCloudNotes.push(n);
-    },
-    deleteNoteCloud: async (id) => { mockCloudNotes = mockCloudNotes.filter((n) => n.id !== id); },
+    getCloudMealPlan: () => mockCloudMealPlan,
+    upsertMealPlanEntry: async (date, recipeId) => { mockCloudMealPlan[date] = recipeId; },
+    deleteMealPlanEntryCloud: async (date) => { delete mockCloudMealPlan[date]; },
   };
 
   // New recipe form shows the Share checkbox once signed in.
@@ -631,25 +675,23 @@ async function main() {
   assert(reportLog.some((r) => r.id === communityId && r.reason === "wrong ingredients"), "submitting a report calls window.MG.reportCommunityRecipe with the reason");
   assert(/reported/i.test(window.document.getElementById("report-box").textContent), "report box shows a thank-you confirmation after submitting");
 
-  // ---- Notes (signed in, cloud sync via mocked window.MG) ----
-  go("#/notes");
-  assert(/Synced to your account/.test(window.document.getElementById("view").textContent), "notes list shows the cloud-synced hint once signed in");
+  // ---- Meal Planning (signed in, cloud sync via mocked window.MG) ----
+  go("#/meal-plan");
+  assert(/Synced to your account/.test(window.document.getElementById("view").textContent), "meal plan shows the cloud-synced hint once signed in");
 
-  go("#/notes/new");
-  window.document.getElementById("note-title").value = "Cloud Note";
-  window.document.getElementById("note-body").value = "This one syncs across devices.";
-  window.document.getElementById("save-note-btn").click();
+  const mpTodayISO = window.isoDate(new Date());
+  go("#/meal-plan/day/" + mpTodayISO);
+  const pierogiCard = Array.from(window.document.querySelectorAll("[data-pick-mealplan]")).find((n) => n.getAttribute("data-pick-mealplan") === savedShared.id);
+  assert(!!pierogiCard, "day picker lists the signed-in user's cloud recipes");
+  pierogiCard.click();
   await flush();
-  assert(mockCloudNotes.some((n) => n.title === "Cloud Note"), "saving a signed-in note calls window.MG.upsertNote");
-  const cloudNoteId = mockCloudNotes.find((n) => n.title === "Cloud Note").id;
+  assert(mockCloudMealPlan[mpTodayISO] === savedShared.id, "picking a recipe while signed in calls window.MG.upsertMealPlanEntry");
 
-  go("#/notes/edit/" + cloudNoteId);
-  assert(window.document.getElementById("note-title").value === "Cloud Note", "edit form prefills the cloud note's title");
-  window.confirm = () => true;
-  window.document.getElementById("delete-note-btn").click();
+  go("#/meal-plan/day/" + mpTodayISO);
+  assert(!!window.document.getElementById("meal-plan-clear-btn"), "day picker shows Clear once a cloud-synced recipe is planned");
+  window.document.getElementById("meal-plan-clear-btn").click();
   await flush();
-  assert(!mockCloudNotes.some((n) => n.id === cloudNoteId), "deleting a signed-in note calls window.MG.deleteNoteCloud");
-  window.confirm = () => false;
+  assert(!mockCloudMealPlan[mpTodayISO], "clearing a day while signed in calls window.MG.deleteMealPlanEntryCloud");
 
   // ---- Profile (signed in, admin) — mocked window.MG with isAdmin:true ----
   const grants = [{ uid: "u2", grantedTo: "janes_kitchen", granted: true }];

@@ -22,7 +22,7 @@ const ICONS = {
   skewer: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 20 4"/><circle cx="9" cy="15" r="2"/><circle cx="13" cy="11" r="2"/><circle cx="17" cy="7" r="2"/></svg>`,
   folder: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>`,
   mountain: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19 9.5 6l4 6.5L16 9l5 10Z"/><path d="M13.2 11.3 11 15h6.5"/></svg>`,
-  note: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>`,
+  calendar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M7.5 14h1M11.5 14h1M15.5 14h1M7.5 17.5h1M11.5 17.5h1"/></svg>`,
 };
 
 // Recipes are organized into these folders (plus an "uncategorized" bucket
@@ -103,49 +103,149 @@ function deleteRecipe(id) {
   return Promise.resolve();
 }
 
-// ---------- Storage: Notes ----------
-// Same local-vs-cloud split as recipes above: signed out, notes live in
-// this browser's localStorage; signed in, they live in Firestore and sync
-// across every device, kept fresh here by the "mg-notes-changed" event.
-const NOTES_STORAGE_KEY = "mg_notes_v1";
+// ---------- Date helpers (Meal Planning) ----------
+// Plain local-calendar-date math -- deliberately avoids Date's UTC/ISO
+// string round-tripping (new Date("2026-09-28") is parsed as UTC midnight,
+// which can land on the *previous* local day west of UTC) by always
+// constructing/reading Date objects from their local y/m/d components.
+function isoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
-function getLocalNotes() {
+function parseISODate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function startOfWeek(d) {
+  const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  copy.setDate(copy.getDate() - copy.getDay()); // getDay(): 0 = Sunday
+  return copy;
+}
+
+function addDays(d, n) {
+  const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  copy.setDate(copy.getDate() + n);
+  return copy;
+}
+
+function weekDates(weekStart) {
+  return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+}
+
+function formatDayLabel(d, long) {
+  return d.toLocaleDateString("en-US", long
+    ? { weekday: "long", month: "long", day: "numeric" }
+    : { weekday: "short", month: "short", day: "numeric" });
+}
+
+function formatWeekLabel(wsISO) {
+  const ws = parseISODate(wsISO);
+  const we = addDays(ws, 6);
+  const sameMonth = ws.getMonth() === we.getMonth();
+  const startStr = ws.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const endStr = we.toLocaleDateString("en-US", sameMonth
+    ? { day: "numeric", year: "numeric" }
+    : { month: "short", day: "numeric", year: "numeric" });
+  return `${startStr} – ${endStr}`;
+}
+
+// ---------- Storage: Meal Planning ----------
+// Which recipe (if any) is planned for a given calendar day. Same
+// local-vs-cloud split as recipes/community above: signed out, the plan
+// lives in this browser's localStorage; signed in, it lives in Firestore
+// (one doc per day, under users/{uid}/mealPlan/{date}) and syncs across
+// every device, kept fresh here by the "mg-meal-plan-changed" event.
+const MEAL_PLAN_STORAGE_KEY = "mg_meal_plan_v1"; // { "<yyyy-mm-dd>": "<recipeId>", ... }
+
+function getLocalMealPlan() {
   try {
-    const raw = localStorage.getItem(NOTES_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const raw = localStorage.getItem(MEAL_PLAN_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
   } catch (e) {
-    console.error("Could not read saved notes", e);
-    return [];
+    console.error("Could not read saved meal plan", e);
+    return {};
   }
 }
 
-function saveLocalNotes(list) {
-  localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(list));
+function saveLocalMealPlan(map) {
+  localStorage.setItem(MEAL_PLAN_STORAGE_KEY, JSON.stringify(map));
 }
 
-function getNotes() {
-  if (isSignedIn()) return window.MG.getCloudNotes();
-  return getLocalNotes();
+function getMealPlan() {
+  if (isSignedIn()) return window.MG.getCloudMealPlan();
+  return getLocalMealPlan();
 }
 
-function getNote(id) {
-  return getNotes().find((n) => n.id === id) || null;
-}
-
-function upsertNote(note) {
-  if (isSignedIn()) return window.MG.upsertNote(note);
-  const list = getLocalNotes();
-  const idx = list.findIndex((n) => n.id === note.id);
-  if (idx >= 0) list[idx] = note;
-  else list.push(note);
-  saveLocalNotes(list);
+// Assigns (or, with recipeId null, clears) the recipe planned for a day.
+function setMealPlanRecipe(date, recipeId) {
+  if (isSignedIn()) {
+    return recipeId ? window.MG.upsertMealPlanEntry(date, recipeId) : window.MG.deleteMealPlanEntryCloud(date);
+  }
+  const map = getLocalMealPlan();
+  if (recipeId) map[date] = recipeId;
+  else delete map[date];
+  saveLocalMealPlan(map);
   return Promise.resolve();
 }
 
-function deleteNote(id) {
-  if (isSignedIn()) return window.MG.deleteNoteCloud(id);
-  saveLocalNotes(getLocalNotes().filter((n) => n.id !== id));
-  return Promise.resolve();
+// ---------- Storage: Grocery List (local only) ----------
+// Deliberately NOT synced to the cloud -- crossing an item off is a
+// same-moment, same-device action (you're standing in the store with your
+// phone), so there's no real benefit to syncing it, and keeping it local
+// avoids a lot of complexity. Scoped per week (keyed by that week's Sunday,
+// ISO date) so a "have milk" check doesn't linger and mislead you next week.
+const GROCERY_STORAGE_KEY = "mg_grocery_v1"; // { "<weekStartISO>": { checked: {key:bool}, extra: [{id,text,checked}] } }
+
+function ingredientKey(name, unit) {
+  return (name || "").trim().toLowerCase() + "|" + (unit || "").trim().toLowerCase();
+}
+
+function getAllGroceryState() {
+  try {
+    const raw = localStorage.getItem(GROCERY_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    console.error("Could not read saved grocery list", e);
+    return {};
+  }
+}
+
+function getGroceryState(weekStart) {
+  const all = getAllGroceryState();
+  return all[weekStart] || { checked: {}, extra: [] };
+}
+
+function saveGroceryState(weekStart, state) {
+  const all = getAllGroceryState();
+  all[weekStart] = state;
+  localStorage.setItem(GROCERY_STORAGE_KEY, JSON.stringify(all));
+}
+
+// Aggregates ingredients from every recipe planned that week: same
+// name+unit combine into one line (quantities summed); a name that appears
+// with two different units gets two separate lines rather than guessing at
+// a conversion.
+function buildGroceryIngredients(weekStart) {
+  const plan = getMealPlan();
+  const lines = new Map();
+  weekDates(parseISODate(weekStart)).map(isoDate).forEach((date) => {
+    const recipeId = plan[date];
+    if (!recipeId) return;
+    const recipe = getRecipe(recipeId);
+    if (!recipe) return;
+    (recipe.ingredients || []).forEach((ing) => {
+      const key = ingredientKey(ing.name, ing.unit);
+      if (!lines.has(key)) lines.set(key, { name: (ing.name || "").trim(), unit: ing.unit || "", qty: 0, hasQty: false });
+      const line = lines.get(key);
+      const qty = parseFloat(ing.qty);
+      if (!isNaN(qty)) { line.qty += qty; line.hasQty = true; }
+    });
+  });
+  return Array.from(lines.values());
 }
 
 // ---------- Community Recipes: small in-memory cache ----------
@@ -268,7 +368,7 @@ function renderHome() {
       <div class="home-box butter" data-route="#/allergen">${ICONS.leaf}<span>Allergen Checker</span></div>
       <div class="home-box" data-route="#/temp">${ICONS.thermo}<span>Temperature Converter</span></div>
       <div class="home-box blush" data-route="#/create">${ICONS.wand}<span>Recipe Creator</span></div>
-      <div class="home-box butter" data-route="#/notes">${ICONS.note}<span>Notes</span></div>
+      <div class="home-box butter" data-route="#/meal-plan">${ICONS.calendar}<span>Meal Planning</span></div>
     </div>
     <div class="quick-links">
       <div class="quick-link" data-route="#/community">${ICONS.book} Community Recipes</div>
@@ -564,99 +664,212 @@ function wireRecipeForm(id) {
   }
 }
 
-// ---------- View: Notes ----------
-// A simple, personal scratchpad — no folders, no ingredients, nothing
-// shared with anyone. Same list-and-form shape as Recipes, just simpler.
-function renderNotesList() {
-  const notes = getNotes();
+// ---------- View: Meal Planning ----------
+// A week-at-a-time calendar: tap a day to assign one of your saved recipes
+// to it, then jump to a grocery list built automatically from whatever's
+// planned that week.
+function renderMealPlanWeek(weekStartParam) {
+  const ws = weekStartParam ? parseISODate(weekStartParam) : startOfWeek(new Date());
+  const wsISO = isoDate(ws);
+  const plan = getMealPlan();
+  const todayISO = isoDate(new Date());
+
   const syncNote = isSignedIn()
-    ? `<p class="hint">☁ Synced to your account — these notes follow you to any device you sign into.</p>`
-    : `<p class="hint">💾 Saved on this device only. <a href="#/profile">Sign in</a> to sync notes across your phone and computer.</p>`;
-  const rows = notes.length
-    ? notes.map((n) => {
-        const preview = (n.body || "").trim();
-        return `
-          <div class="recipe-card" data-open-note="${n.id}">
-            <div>
-              <div class="rc-title">${escapeHtml(n.title || "(untitled note)")}</div>
-              <div class="rc-meta">${escapeHtml(preview.slice(0, 60))}${preview.length > 60 ? "…" : ""}</div>
-            </div>
-            <span>›</span>
-          </div>`;
-      }).join("")
-    : `<p class="muted-msg">No notes yet — add your first one below.</p>`;
+    ? `<p class="hint">☁ Synced to your account — your meal plan follows you to any device you sign into.</p>`
+    : `<p class="hint">💾 Saved on this device only. <a href="#/profile">Sign in</a> to sync your meal plan across your phone and computer.</p>`;
+
+  const dayRows = weekDates(ws).map((d) => {
+    const dISO = isoDate(d);
+    const recipe = plan[dISO] ? getRecipe(plan[dISO]) : null;
+    return `
+      <div class="recipe-card" data-open-mealplan-day="${dISO}">
+        <div>
+          <div class="rc-title">${formatDayLabel(d)}${dISO === todayISO ? `<span class="tag">Today</span>` : ""}</div>
+          <div class="rc-meta">${recipe ? escapeHtml(recipe.title || "(untitled recipe)") : "No meal planned yet"}</div>
+        </div>
+        <span>›</span>
+      </div>`;
+  }).join("");
 
   return `
-    ${pageHeader("Notes")}
+    ${pageHeader("Meal Planning")}
     ${syncNote}
-    ${rows}
+    <div class="week-nav">
+      <button type="button" class="link-btn" id="meal-plan-prev-week">‹ Previous week</button>
+      <span class="week-label">${formatWeekLabel(wsISO)}</span>
+      <button type="button" class="link-btn" id="meal-plan-next-week">Next week ›</button>
+    </div>
+    ${dayRows}
     <div class="recipe-actions">
-      <button class="btn" id="new-note-btn">+ New Note</button>
+      <button class="btn" id="meal-plan-grocery-btn">Grocery List for This Week</button>
     </div>
   `;
 }
 
-function renderNoteForm(id) {
-  const existing = id ? getNote(id) : null;
-  const title = existing ? "Edit Note" : "New Note";
+function wireMealPlanWeek(weekStartParam) {
+  const ws = weekStartParam ? parseISODate(weekStartParam) : startOfWeek(new Date());
+  const wsISO = isoDate(ws);
+
+  document.getElementById("meal-plan-prev-week").addEventListener("click", () => {
+    location.hash = "#/meal-plan/week/" + isoDate(addDays(ws, -7));
+  });
+  document.getElementById("meal-plan-next-week").addEventListener("click", () => {
+    location.hash = "#/meal-plan/week/" + isoDate(addDays(ws, 7));
+  });
+  document.getElementById("meal-plan-grocery-btn").addEventListener("click", () => {
+    location.hash = "#/meal-plan/grocery/" + wsISO;
+  });
+  document.querySelectorAll("[data-open-mealplan-day]").forEach((n) => {
+    n.addEventListener("click", () => {
+      location.hash = "#/meal-plan/day/" + n.getAttribute("data-open-mealplan-day");
+    });
+  });
+}
+
+function renderMealPlanDay(dateISO) {
+  const d = parseISODate(dateISO);
+  const wsISO = isoDate(startOfWeek(d));
+  const plan = getMealPlan();
+  const currentRecipeId = plan[dateISO] || null;
+  const recipes = getRecipes();
+
+  const rows = recipes.length
+    ? recipes.map((r) => `
+        <div class="recipe-card${r.id === currentRecipeId ? " selected" : ""}" data-pick-mealplan="${r.id}">
+          <div>
+            <div class="rc-title">${escapeHtml(r.title || "(untitled recipe)")}</div>
+            <div class="rc-meta">${r.servings || "?"} servings · ${(r.ingredients || []).length} ingredients</div>
+          </div>
+          <span>${r.id === currentRecipeId ? "✓" : "›"}</span>
+        </div>`).join("")
+    : `<p class="muted-msg">You don't have any saved recipes yet. <a href="#/recipes">Add one first</a>.</p>`;
+
   return `
-    ${pageHeader(title, "#/notes")}
-    <div class="card">
-      <div class="field" style="margin-bottom:14px;">
-        <label for="note-title">Title</label>
-        <input type="text" id="note-title" placeholder="e.g. Substitutions I like" value="${existing ? escapeHtml(existing.title || "") : ""}">
-      </div>
-      <div class="field">
-        <label for="note-body">Note</label>
-        <textarea id="note-body" placeholder="Write anything you want to remember…" style="min-height:180px;">${existing ? escapeHtml(existing.body || "") : ""}</textarea>
-      </div>
-      <div class="recipe-actions">
-        <button class="btn" id="save-note-btn">Save Note</button>
-        ${existing ? `<button class="btn danger" id="delete-note-btn">Delete</button>` : ""}
-      </div>
-    </div>
+    ${pageHeader(formatDayLabel(d, true), "#/meal-plan/week/" + wsISO)}
+    ${currentRecipeId ? `<div class="recipe-actions"><button class="btn danger" id="meal-plan-clear-btn">Clear this day</button></div>` : ""}
+    ${rows}
   `;
 }
 
-function wireNoteForm(id) {
-  const existing = id ? getNote(id) : null;
+function wireMealPlanDay(dateISO) {
+  const d = parseISODate(dateISO);
+  const wsISO = isoDate(startOfWeek(d));
 
-  const saveBtn = document.getElementById("save-note-btn");
-  saveBtn.addEventListener("click", async () => {
-    const title = document.getElementById("note-title").value.trim();
-    const body = document.getElementById("note-body").value;
-    if (!title && !body.trim()) { alert("Please write something before saving."); return; }
-    const note = {
-      id: existing ? existing.id : newId(),
-      title, body,
-    };
-    saveBtn.disabled = true;
-    saveBtn.textContent = "Saving…";
-    try {
-      await upsertNote(note);
-      location.hash = "#/notes";
-    } catch (err) {
-      console.error("Could not save note", err);
-      alert("Sorry, that note couldn't be saved: " + (err.message || err));
-      saveBtn.disabled = false;
-      saveBtn.textContent = "Save Note";
-    }
+  document.querySelectorAll("[data-pick-mealplan]").forEach((n) => {
+    n.addEventListener("click", async () => {
+      try {
+        await setMealPlanRecipe(dateISO, n.getAttribute("data-pick-mealplan"));
+        location.hash = "#/meal-plan/week/" + wsISO;
+      } catch (err) {
+        console.error("Could not save meal plan", err);
+        alert("Sorry, that couldn't be saved: " + (err.message || err));
+      }
+    });
   });
 
-  const deleteBtn = document.getElementById("delete-note-btn");
-  if (deleteBtn) {
-    deleteBtn.addEventListener("click", async () => {
-      if (confirm("Delete this note? This can't be undone.")) {
-        try {
-          await deleteNote(existing.id);
-          location.hash = "#/notes";
-        } catch (err) {
-          console.error("Could not delete note", err);
-          alert("Sorry, that note couldn't be deleted: " + (err.message || err));
-        }
+  const clearBtn = document.getElementById("meal-plan-clear-btn");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", async () => {
+      try {
+        await setMealPlanRecipe(dateISO, null);
+        location.hash = "#/meal-plan/week/" + wsISO;
+      } catch (err) {
+        console.error("Could not clear that day", err);
+        alert("Sorry, that couldn't be cleared: " + (err.message || err));
       }
     });
   }
+}
+
+function renderMealPlanGrocery(weekStartParam) {
+  const wsISO = weekStartParam || isoDate(startOfWeek(new Date()));
+  const state = getGroceryState(wsISO);
+  const ingredients = buildGroceryIngredients(wsISO);
+
+  const ingredientRows = ingredients.map((line) => {
+    const key = ingredientKey(line.name, line.unit);
+    const have = !!state.checked[key];
+    const amountText = [line.hasQty ? fmtNum(line.qty) : "", line.unit].filter(Boolean).join(" ");
+    return `
+      <label class="grocery-row${have ? " have" : ""}" data-grocery-row-key="${escapeHtml(key)}">
+        <input type="checkbox" class="grocery-chk" data-grocery-key="${escapeHtml(key)}" ${have ? "checked" : ""}>
+        <span class="grocery-text">${escapeHtml(line.name)}${amountText ? ` — ${escapeHtml(amountText)}` : ""}</span>
+      </label>`;
+  }).join("");
+
+  const extraRows = state.extra.map((item) => `
+    <label class="grocery-row${item.checked ? " have" : ""}" data-grocery-row-extra="${item.id}">
+      <input type="checkbox" class="grocery-chk" data-grocery-extra="${item.id}" ${item.checked ? "checked" : ""}>
+      <span class="grocery-text">${escapeHtml(item.text)}</span>
+      <button type="button" class="remove-btn" data-remove-extra="${item.id}" title="Remove">×</button>
+    </label>`).join("");
+
+  const emptyNote = (ingredients.length || state.extra.length)
+    ? ""
+    : `<p class="muted-msg">No recipes planned this week yet — add some from the calendar and their ingredients will show up here.</p>`;
+
+  const hasRows = ingredients.length || state.extra.length;
+
+  return `
+    ${pageHeader("Grocery List", "#/meal-plan/week/" + wsISO)}
+    <p class="hint">For the week of ${formatWeekLabel(wsISO)}. Checked items are saved on this device.</p>
+    ${emptyNote}
+    ${hasRows ? `<div class="card" id="grocery-list-card">${ingredientRows}${extraRows}</div>` : ""}
+    <div class="row-flex" style="align-items:flex-end;">
+      <div class="field" style="flex:1; min-width:160px;">
+        <label for="grocery-extra-input">Add an item</label>
+        <input type="text" id="grocery-extra-input" placeholder="e.g. paper towels">
+      </div>
+      <button class="btn" id="grocery-add-btn">+ Add</button>
+    </div>
+  `;
+}
+
+function wireMealPlanGrocery(weekStartParam) {
+  const wsISO = weekStartParam || isoDate(startOfWeek(new Date()));
+
+  function toggle(checkboxSelector, stateUpdater) {
+    document.querySelectorAll(checkboxSelector).forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const state = getGroceryState(wsISO);
+        stateUpdater(state, cb);
+        saveGroceryState(wsISO, state);
+        cb.closest(".grocery-row").classList.toggle("have", cb.checked);
+      });
+    });
+  }
+
+  toggle("[data-grocery-key]", (state, cb) => {
+    state.checked[cb.getAttribute("data-grocery-key")] = cb.checked;
+  });
+  toggle("[data-grocery-extra]", (state, cb) => {
+    const item = state.extra.find((x) => x.id === cb.getAttribute("data-grocery-extra"));
+    if (item) item.checked = cb.checked;
+  });
+
+  document.querySelectorAll("[data-remove-extra]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      // The button sits inside a <label> (for the row's checkbox), so
+      // without this a click here would also toggle that checkbox via the
+      // label's own default behavior before this handler removes the row.
+      e.preventDefault();
+      const state = getGroceryState(wsISO);
+      state.extra = state.extra.filter((x) => x.id !== btn.getAttribute("data-remove-extra"));
+      saveGroceryState(wsISO, state);
+      render();
+    });
+  });
+
+  const addBtn = document.getElementById("grocery-add-btn");
+  addBtn.addEventListener("click", () => {
+    const input = document.getElementById("grocery-extra-input");
+    const text = input.value.trim();
+    if (!text) return;
+    const state = getGroceryState(wsISO);
+    state.extra.push({ id: newId(), text, checked: false });
+    saveGroceryState(wsISO, state);
+    render();
+  });
 }
 
 // ---------- Shared: pick a saved recipe ----------
@@ -1962,8 +2175,6 @@ const routes = {
   "#/home": { render: renderHome },
   "#/recipes": { render: renderRecipesList },
   "#/recipe/new": { render: () => renderRecipeForm(null), wire: () => wireRecipeForm(null) },
-  "#/notes": { render: renderNotesList },
-  "#/notes/new": { render: () => renderNoteForm(null), wire: () => wireNoteForm(null) },
   "#/friends": { render: () => renderStub("Friends & Family", "sharing recipes with friends and family is coming in a future update, now that accounts are in place.") },
   "#/settings": { render: () => renderStub("Settings", "unit system and theme are coming in a later phase — for now the app uses US customary units and light mode.") },
   "#/profile": { render: renderProfile, wire: wireProfile },
@@ -1974,7 +2185,10 @@ function currentRoute() {
   const hash = location.hash || "#/home";
   const parts = hash.split("/");
   if (hash.startsWith("#/recipe/edit/")) return { name: "edit-recipe", id: parts[3] };
-  if (hash.startsWith("#/notes/edit/")) return { name: "edit-note", id: parts[3] };
+  if (hash.startsWith("#/meal-plan/day/")) return { name: "meal-plan-day", date: parts[3] };
+  if (hash.startsWith("#/meal-plan/grocery/")) return { name: "meal-plan-grocery", weekStart: parts[3] };
+  if (hash.startsWith("#/meal-plan/week/")) return { name: "meal-plan-week", weekStart: parts[3] };
+  if (hash === "#/meal-plan") return { name: "meal-plan-week", weekStart: null };
   if (hash.startsWith("#/recipes/")) return { name: "recipe-category", category: parts[2] };
   if (hash.startsWith("#/scale/convert/")) return { name: "scale-convert", id: parts[3] };
   if (hash === "#/scale/convert") return { name: "scale-convert", id: null };
@@ -2006,9 +2220,15 @@ function render() {
   if (route.name === "edit-recipe") {
     view.innerHTML = renderRecipeForm(route.id);
     wireRecipeForm(route.id);
-  } else if (route.name === "edit-note") {
-    view.innerHTML = renderNoteForm(route.id);
-    wireNoteForm(route.id);
+  } else if (route.name === "meal-plan-week") {
+    view.innerHTML = renderMealPlanWeek(route.weekStart);
+    wireMealPlanWeek(route.weekStart);
+  } else if (route.name === "meal-plan-day") {
+    view.innerHTML = renderMealPlanDay(route.date);
+    wireMealPlanDay(route.date);
+  } else if (route.name === "meal-plan-grocery") {
+    view.innerHTML = renderMealPlanGrocery(route.weekStart);
+    wireMealPlanGrocery(route.weekStart);
   } else if (route.name === "recipe-category") {
     view.innerHTML = renderRecipeCategory(route.category);
   } else if (route.name === "scale-home") {
@@ -2070,9 +2290,6 @@ function wireGlobalClicks() {
   document.querySelectorAll("[data-open-recipe]").forEach((n) => {
     n.addEventListener("click", () => { location.hash = "#/recipe/edit/" + n.getAttribute("data-open-recipe"); });
   });
-  document.querySelectorAll("[data-open-note]").forEach((n) => {
-    n.addEventListener("click", () => { location.hash = "#/notes/edit/" + n.getAttribute("data-open-note"); });
-  });
   document.querySelectorAll("[data-pick-recipe]").forEach((n) => {
     n.addEventListener("click", () => {
       location.hash = n.getAttribute("data-route-prefix") + n.getAttribute("data-pick-recipe");
@@ -2080,8 +2297,6 @@ function wireGlobalClicks() {
   });
   const newBtn = document.getElementById("new-recipe-btn");
   if (newBtn) newBtn.addEventListener("click", () => { location.hash = "#/recipe/new"; });
-  const newNoteBtn = document.getElementById("new-note-btn");
-  if (newNoteBtn) newNoteBtn.addEventListener("click", () => { location.hash = "#/notes/new"; });
   const backBtn = document.getElementById("back-btn");
   if (backBtn) backBtn.addEventListener("click", () => { location.hash = backBtn.getAttribute("data-back-route") || "#/home"; });
 }
@@ -2104,12 +2319,14 @@ function updateProfileButton() {
     : ICONS.person;
 }
 
+const MEAL_PLAN_ROUTES = ["meal-plan-week", "meal-plan-day", "meal-plan-grocery"];
+
 window.addEventListener("mg-auth-changed", () => {
   updateProfileButton();
-  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale-convert", "allergen-measurements", "#/notes", "edit-note"]);
+  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale-convert", "allergen-measurements", ...MEAL_PLAN_ROUTES]);
 });
-window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "recipe-category", "scale-convert", "allergen-measurements", "#/profile"]));
-window.addEventListener("mg-notes-changed", () => refreshIfRelevant(["#/notes", "edit-note"]));
+window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "recipe-category", "scale-convert", "allergen-measurements", "#/profile", ...MEAL_PLAN_ROUTES]));
+window.addEventListener("mg-meal-plan-changed", () => refreshIfRelevant(MEAL_PLAN_ROUTES));
 
 window.addEventListener("hashchange", render);
 window.addEventListener("DOMContentLoaded", () => {
