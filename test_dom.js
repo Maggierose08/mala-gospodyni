@@ -794,10 +794,10 @@ async function main() {
     deleteComment: async (id, commentId) => {
       mockComments[id] = (mockComments[id] || []).filter((c) => c.id !== commentId);
     },
-    lookupPublicProfile: async (username) => {
-      const key = username.trim().toLowerCase();
-      if (key === "babcia_anna") return { uid: "friend1", username: "babcia_anna", avatar: "" };
-      throw new Error("No account found with that username.");
+    lookupPublicProfile: async (identifier) => {
+      const key = identifier.trim().toLowerCase();
+      if (key === "babcia_anna" || key === "anna@example.com") return { uid: "friend1", username: "babcia_anna", avatar: "" };
+      throw new Error(key.includes("@") ? "No account found with that email." : "No account found with that username.");
     },
     shareRecipeToFriend: async (friendUid, recipe) => {
       friendShareLog.push({ friendUid, recipe });
@@ -920,6 +920,7 @@ async function main() {
   // ---- Friends & Family (signed in): send a recipe, view the inbox ----
   go("#/friends");
   assert(!!window.document.getElementById("friend-lookup-btn"), "Friends & Family shows the send form once signed in");
+  assert(/username or email/i.test(window.document.getElementById("view").textContent), "Friends & Family explains you can look someone up by username or email");
   await flush();
   assert(/Kielbasa Stew/.test(window.document.getElementById("shared-with-me-list").textContent), "inbox lists a recipe shared with you");
   assert(/ciocia_ewa/.test(window.document.getElementById("shared-with-me-list").textContent), "inbox shows who shared it");
@@ -928,6 +929,13 @@ async function main() {
   window.document.getElementById("friend-lookup-btn").click();
   await flush();
   assert(/Couldn't look that up/.test(window.document.getElementById("friend-lookup-status").textContent), "looking up an unknown friend shows an error");
+
+  // Looking up by email finds the same account as looking up by username.
+  window.document.getElementById("friend-username").value = "Anna@Example.com";
+  window.document.getElementById("friend-lookup-btn").click();
+  await flush();
+  assert(/babcia_anna/.test(window.document.getElementById("friend-lookup-preview").textContent), "looking up a friend by email (any case) previews their username, got: " + window.document.getElementById("friend-lookup-preview").textContent);
+  window.document.getElementById("friend-send-cancel-btn").click();
 
   window.document.getElementById("friend-username").value = "babcia_anna";
   window.document.getElementById("friend-lookup-btn").click();

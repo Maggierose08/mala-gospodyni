@@ -1895,7 +1895,7 @@ function renderProfile() {
         </div>
         <p id="username-status" class="hint"></p>
         <div class="field">
-          <label for="contact-info">Contact info <span class="muted-msg">(for friends &amp; family, coming later — optional)</span></label>
+          <label for="contact-info">Contact info <span class="muted-msg">(optional)</span></label>
           <input type="text" id="contact-info" placeholder="e.g. a phone number or note" value="${escapeHtml(user.contactInfo || "")}">
         </div>
         <div class="recipe-actions">
@@ -2798,11 +2798,11 @@ function renderFriends() {
     ${pageHeader("Friends & Family")}
     <div class="card">
       <h2>Send a recipe</h2>
-      <p class="hint">Look up a friend by their username, then send one of your recipes straight to their account.</p>
+      <p class="hint">Look up a friend by their username or email, then send one of your recipes straight to their account.</p>
       <div class="row-flex">
         <div class="field" style="flex:1; min-width:160px;">
-          <label for="friend-username">Their username</label>
-          <input type="text" id="friend-username" placeholder="e.g. janes_kitchen">
+          <label for="friend-username">Their username or email</label>
+          <input type="text" id="friend-username" placeholder="e.g. janes_kitchen or jane@example.com">
         </div>
       </div>
       <div class="recipe-actions">
@@ -2824,16 +2824,16 @@ function wireFriends() {
   const lookupBtn = document.getElementById("friend-lookup-btn");
   const status = document.getElementById("friend-lookup-status");
   const preview = document.getElementById("friend-lookup-preview");
-  const usernameInput = document.getElementById("friend-username");
+  const identifierInput = document.getElementById("friend-username");
 
   lookupBtn.addEventListener("click", async () => {
-    const username = usernameInput.value.trim();
-    if (!username) { status.textContent = "Please enter a username."; return; }
+    const identifier = identifierInput.value.trim();
+    if (!identifier) { status.textContent = "Please enter a username or email."; return; }
     preview.innerHTML = "";
     lookupBtn.disabled = true;
     status.textContent = "Looking up…";
     try {
-      const profile = await window.MG.lookupPublicProfile(username);
+      const profile = await window.MG.lookupPublicProfile(identifier);
       status.textContent = "";
       preview.innerHTML = renderFriendSendPreview(profile, getRecipes());
       const cancelBtn = document.getElementById("friend-send-cancel-btn");

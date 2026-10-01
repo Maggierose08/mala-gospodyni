@@ -94,6 +94,29 @@ function publicProfileRef(uid) {
   return doc(db, "publicProfiles", uid);
 }
 
+// A lowercased-email -> uid index, the same shape and purpose as
+// "usernames" below, so Friends & Family lookup can find someone by either
+// their username or their email. Kept in sync at signup (claimUsername)
+// and self-healed for any account that doesn't have one yet (accounts
+// created before this existed) by ensureEmailLookup, called once per
+// sign-in below.
+function emailLookupRef(email) {
+  return doc(db, "emailLookup", (email || "").trim().toLowerCase());
+}
+
+async function ensureEmailLookup(user) {
+  if (!user.email) return;
+  try {
+    const ref = emailLookupRef(user.email);
+    const snap = await getDoc(ref);
+    if (!snap.exists() || snap.data().uid !== user.uid) {
+      await setDoc(ref, { uid: user.uid });
+    }
+  } catch (e) {
+    console.error("Could not sync email lookup", e);
+  }
+}
+
 function subscribeToRecipes(uid) {
   if (recipesUnsubscribe) recipesUnsubscribe();
   recipesUnsubscribe = onSnapshot(
@@ -161,6 +184,9 @@ onAuthStateChanged(auth, async (user) => {
     currentUser = { uid: user.uid, email: user.email, username, contactInfo, avatar, isAdmin, hasFreeAccess, emailVerified: user.emailVerified };
     subscribeToRecipes(user.uid);
     subscribeToMealPlan(user.uid);
+    // Fire-and-forget (errors are caught inside) -- doesn't need to block
+    // sign-in finishing, it just needs to happen eventually.
+    ensureEmailLookup(user);
   } else {
     currentUser = null;
   }
@@ -191,6 +217,7 @@ async function claimUsername(uid, email, username) {
     tx.set(usernameRef, { uid });
     tx.set(userRef, { username: clean, email, contactInfo: "", createdAt: serverTimestamp() });
     tx.set(publicProfileRef(uid), { username: clean, avatar: "" });
+    tx.set(emailLookupRef(email), { uid });
   });
   return clean;
 }
@@ -574,21 +601,26 @@ window.MG = {
   },
 
   // ---- Friends & Family: direct recipe sharing ----
-  // Looks a username up via the SAME "usernames" mapping used at sign-up,
-  // but returns only what's in that account's public profile (username,
+  // Looks a friend up by either their username (via "usernames") or their
+  // email (via "emailLookup") -- whichever the input looks like -- but
+  // returns only what's in that account's public profile (username,
   // avatar) -- never their email or contact info, unlike the admin-only
   // lookupUserForGrant above. Any signed-in user can call this.
-  lookupPublicProfile: async (username) => {
+  lookupPublicProfile: async (identifier) => {
     if (!currentUser) throw new Error("Please sign in first.");
-    const key = (username || "").trim().toLowerCase();
-    if (!key) throw new Error("Please enter a username.");
-    const usernameSnap = await getDoc(doc(db, "usernames", key));
-    if (!usernameSnap.exists()) throw new Error("No account found with that username.");
-    const uid = usernameSnap.data().uid;
-    if (uid === currentUser.uid) throw new Error("That's your own username.");
+    const raw = (identifier || "").trim();
+    if (!raw) throw new Error("Please enter a username or email.");
+    const isEmail = raw.includes("@");
+    const key = raw.toLowerCase();
+    const indexSnap = await getDoc(doc(db, isEmail ? "emailLookup" : "usernames", key));
+    if (!indexSnap.exists()) {
+      throw new Error(isEmail ? "No account found with that email." : "No account found with that username.");
+    }
+    const uid = indexSnap.data().uid;
+    if (uid === currentUser.uid) throw new Error(isEmail ? "That's your own email." : "That's your own username.");
     const pubSnap = await getDoc(publicProfileRef(uid));
     const data = pubSnap.exists() ? pubSnap.data() : {};
-    return { uid, username: data.username || username.trim(), avatar: data.avatar || "" };
+    return { uid, username: data.username || raw, avatar: data.avatar || "" };
   },
 
   // Drops a snapshot of the recipe (not a live reference) into the
@@ -632,8 +664,9 @@ window.MG = {
   // doesn't cascade deletes, so everything this account owns is cleaned up
   // by hand, in an order that can't strand anything the security rules
   // would then block: recipes/meal-plan/community copies (owned outright),
-  // then the username and public-profile mappings, then the account's own
-  // profile document, and finally the Firebase Auth account itself.
+  // then the username, email-lookup, and public-profile mappings, then the
+  // account's own profile document, and finally the Firebase Auth account
+  // itself.
   // Known limitation: comments this account left on OTHER people's
   // community recipes, and a "grants/{uid}" free-access document from the
   // admin, are left behind (comments stay attributed to the old username;
@@ -662,6 +695,9 @@ window.MG = {
       }
       if (currentUser.username) {
         try { await deleteDoc(doc(db, "usernames", currentUser.username.toLowerCase())); } catch (e) { /* already gone */ }
+      }
+      if (currentUser.email) {
+        try { await deleteDoc(emailLookupRef(currentUser.email)); } catch (e) { /* already gone */ }
       }
       try { await deleteDoc(publicProfileRef(uid)); } catch (e) { /* already gone */ }
       if (!currentUser.isAdmin) {
