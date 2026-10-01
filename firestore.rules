@@ -11,6 +11,10 @@ service cloud.firestore {
       allow read: if request.auth != null
         && (request.auth.uid == userId || request.auth.token.email == "maggie13a2z@gmail.com");
       allow create, update: if request.auth != null && request.auth.uid == userId;
+      // Self-serve account deletion cleans up this doc itself (after
+      // re-authenticating and deleting everything it owns) -- only the
+      // account itself can do this, never anyone else.
+      allow delete: if request.auth != null && request.auth.uid == userId;
 
       // ---- A user's own private recipes ----
       match /recipes/{recipeId} {
@@ -21,6 +25,19 @@ service cloud.firestore {
       match /mealPlan/{date} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
+
+      // ---- Recipes a friend has sent this account directly (Friends &
+      // Family sharing) -- a one-way inbox: only the recipient can ever
+      // read or clear it, but ANY signed-in user can drop a new recipe in,
+      // the same way anyone can hand someone a recipe card in person.
+      // request.resource.data.fromUid must match the sender's own uid, so
+      // a share always shows who it's really from.
+      match /sharedWithMe/{shareId} {
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+          && request.resource.data.fromUid == request.auth.uid;
+        allow update: if false;
+      }
     }
 
     // ---- Username -> uid lookup, used to keep usernames unique ----
@@ -30,11 +47,26 @@ service cloud.firestore {
       allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
     }
 
+    // ---- Public profile mirror (username + avatar ONLY -- never email or
+    // contact info) -- lets any signed-in user look a friend up by
+    // username for Friends & Family sharing, without exposing anything
+    // private. Kept in sync with "users/{uid}" by the app itself whenever
+    // the username or avatar changes. ----
+    match /publicProfiles/{uid} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if request.auth != null && request.auth.uid == uid;
+    }
+
     // ---- Free ("comped") access grants for friends & family -- admin-managed ----
     match /grants/{uid} {
       allow read: if request.auth != null
         && (request.auth.uid == uid || request.auth.token.email == "maggie13a2z@gmail.com");
       allow write: if request.auth != null && request.auth.token.email == "maggie13a2z@gmail.com";
+      // An account can also remove its OWN grant doc (only), as part of
+      // deleting itself -- this can only revoke free access from yourself,
+      // never touch anyone else's, so it doesn't weaken the admin-only
+      // grant/revoke rule above.
+      allow delete: if request.auth != null && request.auth.uid == uid;
     }
 
     // ---- Community Recipes: a public pool anyone can browse ----
@@ -49,7 +81,9 @@ service cloud.firestore {
         && request.resource.data.authorUid == request.auth.uid
         && docId == request.auth.uid + '_' + request.resource.data.sourceRecipeId;
 
-      // Only the original author (or the admin) can remove a shared copy.
+      // Only the original author (or the admin) can remove a shared copy --
+      // the admin case covers the "Remove Recipe" button on the Review
+      // Reports screen.
       allow delete: if request.auth != null
         && (resource.data.authorUid == request.auth.uid
             || request.auth.token.email == "maggie13a2z@gmail.com");
@@ -73,12 +107,15 @@ service cloud.firestore {
 
     // ---- Reports filed against a community recipe ----
     match /reports/{reportId} {
-      // Anyone signed in can file a report; no one (not even the admin) can
-      // read, edit, or delete report docs through the app itself -- for now
-      // review them directly in the Firebase console's Firestore Data tab.
+      // Anyone signed in can file a report. Only the admin can read, list,
+      // or remove reports -- through the in-app "Review Reports" screen
+      // (Profile -> Community moderation), which dismisses a report or
+      // deletes the reported recipe and its report together. Reports are
+      // never editable, by anyone, including the admin.
       allow create: if request.auth != null
         && request.resource.data.reporterUid == request.auth.uid;
-      allow read, update, delete: if false;
+      allow read, delete: if request.auth != null && request.auth.token.email == "maggie13a2z@gmail.com";
+      allow update: if false;
     }
   }
 }

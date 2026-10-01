@@ -41,7 +41,7 @@ async function main() {
   go("#/home");
   const homeBoxes = window.document.querySelectorAll(".home-box");
   assert(homeBoxes.length === 6, "home screen shows 6 boxes, got " + homeBoxes.length);
-  assert(window.document.querySelectorAll(".quick-link").length === 2, "home screen shows 2 quick links");
+  assert(window.document.querySelectorAll(".quick-link").length === 4, "home screen shows 4 quick links");
 
   // ---- fmtQty: ingredient quantities display as fractions ----
   assert(window.fmtQty(0.25) === "1/4", "fmtQty(0.25) shows as 1/4, got " + window.fmtQty(0.25));
@@ -108,6 +108,23 @@ async function main() {
   go("#/recipes");
   assert(/Desserts/.test(window.document.getElementById("view").textContent) && /1 recipe/.test(window.document.getElementById("view").textContent), "Desserts folder shows a count of 1");
   assert(window.document.querySelectorAll("#view .home-box").length === 4, "still no Uncategorized folder, since the one recipe was filed under Desserts");
+
+  // ---- Search within own Recipes ----
+  const recipesSearchInput = window.document.getElementById("recipes-search");
+  assert(!!recipesSearchInput, "Recipes list shows a search box once there's at least one recipe");
+  recipesSearchInput.value = "banana";
+  recipesSearchInput.dispatchEvent(new window.Event("input"));
+  assert(window.document.getElementById("recipes-folders").style.display === "none", "typing a search query hides the folder grid");
+  assert(/Test Banana Bread/.test(window.document.getElementById("recipes-search-results").textContent), "search results include a title match");
+  recipesSearchInput.value = "flour";
+  recipesSearchInput.dispatchEvent(new window.Event("input"));
+  assert(/Test Banana Bread/.test(window.document.getElementById("recipes-search-results").textContent), "search also matches on ingredient name");
+  recipesSearchInput.value = "nothing matches this";
+  recipesSearchInput.dispatchEvent(new window.Event("input"));
+  assert(/No recipes match/.test(window.document.getElementById("recipes-search-results").textContent), "search shows a no-match message");
+  recipesSearchInput.value = "";
+  recipesSearchInput.dispatchEvent(new window.Event("input"));
+  assert(window.document.getElementById("recipes-folders").style.display === "", "clearing the search restores the folder grid");
 
   // ---- Drilling into the Desserts folder shows the recipe ----
   go("#/recipes/dessert");
@@ -393,6 +410,51 @@ async function main() {
   assert(window.document.querySelectorAll(".ing-row").length === 2, "edit form prefills existing ingredient rows");
   const prefilledDessertPill = Array.from(window.document.querySelectorAll(".category-pill")).find((p) => p.getAttribute("data-category") === "dessert");
   assert(prefilledDessertPill.classList.contains("selected"), "edit form prefills the recipe's existing category (Desserts)");
+
+  // ---- Recipe photos: upload UI renders, but only "Add Photo" (no
+  // Remove button) since this recipe has no photo yet ----
+  assert(!!window.document.getElementById("recipe-photo-input"), "edit form renders a hidden photo file input");
+  assert(window.document.getElementById("recipe-photo-btn").textContent === "Add Photo", "photo button reads 'Add Photo' when the recipe has none yet");
+  assert(!window.document.getElementById("recipe-photo-remove-btn"), "no Remove Photo button when the recipe has no photo");
+  assert(window.document.getElementById("recipe-photo-preview").style.display === "none", "photo preview stays hidden with no photo");
+
+  // ---- Print: fills the (normally hidden) #print-area and calls window.print() ----
+  let printCalled = false;
+  const realPrint = window.print;
+  window.print = () => { printCalled = true; };
+  window.document.getElementById("print-recipe-btn").click();
+  assert(printCalled, "clicking Print calls window.print()");
+  const printArea = window.document.getElementById("print-area");
+  assert(!!printArea, "Print creates a #print-area element");
+  assert(/Test Banana Bread/.test(printArea.textContent), "#print-area is filled with the recipe's title");
+  assert(/all-purpose flour/.test(printArea.textContent), "#print-area is filled with the recipe's ingredients");
+  window.print = realPrint;
+
+  // ---- Share: prefers navigator.share(), falls back to the clipboard ----
+  let sharedWith = null;
+  window.navigator.share = (data) => { sharedWith = data; return Promise.resolve(); };
+  window.document.getElementById("share-recipe-btn").click();
+  await flush();
+  assert(!!sharedWith && /Test Banana Bread/.test(sharedWith.text), "Share uses navigator.share() with the recipe's text when it's available");
+  delete window.navigator.share;
+
+  let clipboardText = null;
+  window.navigator.clipboard = { writeText: (t) => { clipboardText = t; return Promise.resolve(); } };
+  const realAlert = window.alert;
+  let alertMsg = "";
+  window.alert = (m) => { alertMsg = m; };
+  window.document.getElementById("share-recipe-btn").click();
+  await flush();
+  assert(!!clipboardText && /Test Banana Bread/.test(clipboardText), "Share falls back to copying the recipe text to the clipboard when navigator.share() isn't available");
+  assert(/clipboard/i.test(alertMsg), "Share fallback tells the person it copied the recipe to their clipboard");
+  window.alert = realAlert;
+
+  // ---- New-recipe form has no Print/Share/Delete (nothing saved yet to act on) ----
+  go("#/recipe/new");
+  assert(!window.document.getElementById("print-recipe-btn"), "New Recipe form has no Print button");
+  assert(!window.document.getElementById("share-recipe-btn"), "New Recipe form has no Share button");
+  go("#/recipe/edit/" + recipeId); // back to the recipe under test before deleting it below
+
   window.document.getElementById("delete-recipe-btn").click(); // triggers confirm() -> jsdom default confirm returns false
   await flush();
   // jsdom's window.confirm returns false by default, so the recipe should NOT be deleted yet.
@@ -493,11 +555,26 @@ async function main() {
   window.document.getElementById("meal-plan-prev-week").click();
   assert(window.location.hash === "#/meal-plan/week/" + window.isoDate(window.addDays(window.startOfWeek(new Date()), -7)), "Previous week button navigates back 7 days");
 
-  // ---- Stub pages don't crash ----
-  ["#/friends", "#/settings"].forEach((h) => {
-    go(h);
-    assert(/not built yet/i.test(window.document.getElementById("view").textContent), "stub page renders for " + h);
-  });
+  // ---- Settings: dark mode toggle ----
+  go("#/settings");
+  const themeBtn = window.document.getElementById("theme-switch-btn");
+  assert(!!themeBtn, "Settings page renders a dark-mode toggle");
+  assert(window.document.documentElement.getAttribute("data-theme") === "light", "theme starts light by default");
+  assert(!themeBtn.classList.contains("on"), "theme switch starts off (light)");
+  themeBtn.click();
+  assert(window.document.documentElement.getAttribute("data-theme") === "dark", "clicking the theme switch turns dark mode on");
+  assert(themeBtn.classList.contains("on"), "theme switch shows on once dark mode is active");
+  assert(window.localStorage.getItem("mg_theme_v1") === "dark", "dark mode choice is persisted to localStorage");
+  go("#/settings"); // re-render: the toggle should reflect the persisted choice
+  assert(window.document.getElementById("theme-switch-btn").classList.contains("on"), "revisiting Settings shows dark mode still on");
+  window.document.getElementById("theme-switch-btn").click(); // back to light, so later tests render in the default theme
+  assert(window.document.documentElement.getAttribute("data-theme") === "light", "clicking again switches back to light mode");
+  assert(/roadmap/i.test(window.document.getElementById("view").textContent), "Settings page is honest that a metric unit toggle isn't built yet");
+
+  // ---- Friends & Family: signed out ----
+  go("#/friends");
+  assert(/Sign in/i.test(window.document.getElementById("view").textContent), "Friends & Family prompts sign-in when signed out");
+  assert(!window.document.getElementById("friend-lookup-btn"), "no lookup form renders for Friends & Family when signed out");
 
   // ---- Substitution Tips (folders, static content, no sign-in needed) ----
   go("#/substitutions");
@@ -544,7 +621,9 @@ async function main() {
   // ---- Profile (signed in, non-admin) — mocked window.MG, since real
   // Firebase can't run inside jsdom (no network, no module-script CDN
   // imports) ----
-  const mockUser = { uid: "u1", email: "test@example.com", username: "testchef", contactInfo: "", avatar: "", isAdmin: false };
+  const mockUser = { uid: "u1", email: "test@example.com", username: "testchef", contactInfo: "", avatar: "", isAdmin: false, emailVerified: false };
+  let verifyResendCount = 0;
+  let deleteAccountLog = [];
   window.MG = {
     getCurrentUser: () => mockUser,
     getCloudRecipes: () => [],
@@ -553,6 +632,12 @@ async function main() {
     changeUsername: async (u) => { mockUser.username = u; window.dispatchEvent(new window.Event("mg-auth-changed")); return u; },
     signOutUser: async () => { /* not invoked in this test */ },
     migrateLocalToCloud: async () => {},
+    resendVerificationEmail: async () => { verifyResendCount++; },
+    refreshEmailVerified: async () => { /* stays unverified until the test below flips it */ },
+    deleteAccount: async (password) => {
+      if (password !== "correcthorse") throw new Error("That email/password combination isn't right.");
+      deleteAccountLog.push("deleted:" + mockUser.uid);
+    },
   };
   go("#/profile");
   assert(window.document.getElementById("username-input").value === "testchef", "profile page shows the signed-in username once window.MG reports a user");
@@ -561,11 +646,50 @@ async function main() {
   assert(!!window.document.getElementById("avatar-btn"), "profile page shows a Change Photo button for any signed-in user");
   assert(!window.document.getElementById("grant-lookup-btn"), "profile page hides the friends & family admin panel for a non-admin user");
 
+  // ---- Email verification banner ----
+  assert(!!window.document.getElementById("resend-verify-btn"), "profile shows a verification banner for an unverified account");
+  window.document.getElementById("resend-verify-btn").click();
+  await flush();
+  assert(verifyResendCount === 1, "Resend Verification Email calls window.MG.resendVerificationEmail");
+  assert(/Sent/i.test(window.document.getElementById("verify-status").textContent), "resend button shows a confirmation once sent");
+  window.document.getElementById("recheck-verify-btn").click();
+  await flush();
+  assert(/Not verified yet/i.test(window.document.getElementById("verify-status").textContent), "re-checking before the link is clicked reports still-unverified");
+  mockUser.emailVerified = true;
+  // No need to dispatch "mg-auth-changed" here to prove the point -- the
+  // banner condition is read straight off getCurrentUser() at render time,
+  // so it's already gone on the very next synchronous render now that
+  // mockUser.emailVerified is true.
+  go("#/profile");
+  assert(!window.document.getElementById("resend-verify-btn"), "verification banner disappears once the account is verified");
+
   window.document.getElementById("username-input").value = "new_handle";
   window.document.getElementById("save-username-btn").click();
   await flush();
   assert(mockUser.username === "new_handle", "saving a new username calls window.MG.changeUsername");
   assert(window.document.getElementById("username-input").value === "new_handle", "profile page shows the updated username after saving");
+
+  // ---- Delete account ----
+  window.document.getElementById("delete-account-btn").click();
+  assert(!!window.document.getElementById("confirm-delete-account-btn"), "Delete My Account opens a password-confirmation box");
+  window.document.getElementById("confirm-delete-account-btn").click();
+  await flush();
+  assert(/enter your password/i.test(window.document.getElementById("delete-account-status").textContent), "confirming with no password shows a message instead of calling window.MG.deleteAccount");
+  assert(deleteAccountLog.length === 0, "no password means window.MG.deleteAccount is not called yet");
+
+  window.document.getElementById("delete-account-password").value = "wrongpassword";
+  const realConfirm = window.confirm;
+  window.confirm = () => true;
+  window.document.getElementById("confirm-delete-account-btn").click();
+  await flush();
+  assert(/Couldn't delete/i.test(window.document.getElementById("delete-account-status").textContent), "a wrong password surfaces window.MG.deleteAccount's error");
+  assert(deleteAccountLog.length === 0, "a wrong password does not delete the account");
+
+  window.document.getElementById("delete-account-password").value = "correcthorse";
+  window.document.getElementById("confirm-delete-account-btn").click();
+  await flush();
+  assert(deleteAccountLog.includes("deleted:u1"), "the correct password calls window.MG.deleteAccount");
+  window.confirm = realConfirm;
 
   // ---- Community Recipes: sharing from the recipe form, browsing, saving a
   // copy, and reporting — all via a mocked window.MG, since real Firebase
@@ -585,6 +709,10 @@ async function main() {
   let mockCommentCounter = 0;
   const shareLog = [];
   const reportLog = [];
+  const friendShareLog = [];
+  let sharedInboxMock = [
+    { id: "share1", recipe: { title: "Kielbasa Stew", servings: 6, ingredients: [{ qty: 2, unit: "lb", name: "kielbasa" }], steps: "Simmer.", category: "main" }, fromUid: "friend2", fromUsername: "ciocia_ewa" },
+  ];
   window.MG = {
     ready: Promise.resolve(),
     getCurrentUser: () => mockUser,
@@ -617,6 +745,18 @@ async function main() {
     },
     deleteComment: async (id, commentId) => {
       mockComments[id] = (mockComments[id] || []).filter((c) => c.id !== commentId);
+    },
+    lookupPublicProfile: async (username) => {
+      const key = username.trim().toLowerCase();
+      if (key === "babcia_anna") return { uid: "friend1", username: "babcia_anna", avatar: "" };
+      throw new Error("No account found with that username.");
+    },
+    shareRecipeToFriend: async (friendUid, recipe) => {
+      friendShareLog.push({ friendUid, recipe });
+    },
+    listSharedWithMe: async () => sharedInboxMock.slice(),
+    dismissSharedItem: async (shareId) => {
+      sharedInboxMock = sharedInboxMock.filter((i) => i.id !== shareId);
     },
   };
 
@@ -729,6 +869,37 @@ async function main() {
   await flush();
   assert(!mockComments[communityId].some((c) => c.id === ownCommentId), "deleting your own comment calls window.MG.deleteComment and removes it");
 
+  // ---- Friends & Family (signed in): send a recipe, view the inbox ----
+  go("#/friends");
+  assert(!!window.document.getElementById("friend-lookup-btn"), "Friends & Family shows the send form once signed in");
+  await flush();
+  assert(/Kielbasa Stew/.test(window.document.getElementById("shared-with-me-list").textContent), "inbox lists a recipe shared with you");
+  assert(/ciocia_ewa/.test(window.document.getElementById("shared-with-me-list").textContent), "inbox shows who shared it");
+
+  window.document.getElementById("friend-username").value = "nobody_here";
+  window.document.getElementById("friend-lookup-btn").click();
+  await flush();
+  assert(/Couldn't look that up/.test(window.document.getElementById("friend-lookup-status").textContent), "looking up an unknown friend shows an error");
+
+  window.document.getElementById("friend-username").value = "babcia_anna";
+  window.document.getElementById("friend-lookup-btn").click();
+  await flush();
+  assert(/babcia_anna/.test(window.document.getElementById("friend-lookup-preview").textContent), "a successful lookup previews the friend's username");
+  const friendRecipeSelect = window.document.getElementById("friend-send-recipe");
+  assert(!!friendRecipeSelect && friendRecipeSelect.options.length > 0, "send form offers a choice of your own recipes");
+  window.document.getElementById("friend-send-btn").click();
+  await flush();
+  assert(friendShareLog.some((s) => s.friendUid === "friend1"), "Send Recipe calls window.MG.shareRecipeToFriend with the looked-up friend's uid");
+
+  // Add a shared recipe to My Recipes, then dismiss it from the inbox.
+  go("#/friends");
+  await flush();
+  window.document.querySelector('[data-add-share="share1"]').click();
+  await flush();
+  assert(mockCloudRecipes.some((r) => r.title === "Kielbasa Stew"), "Add to My Recipes copies the shared recipe via window.MG.upsertRecipe");
+  assert(!sharedInboxMock.some((i) => i.id === "share1"), "adding a shared recipe also clears it from the inbox");
+  assert(!/Kielbasa Stew/.test(window.document.getElementById("shared-with-me-list").textContent), "inbox no longer shows the added recipe");
+
   // ---- Meal Planning (signed in, cloud sync via mocked window.MG) ----
   go("#/meal-plan");
   assert(/Synced to your account/.test(window.document.getElementById("view").textContent), "meal plan shows the cloud-synced hint once signed in");
@@ -749,7 +920,11 @@ async function main() {
 
   // ---- Profile (signed in, admin) — mocked window.MG with isAdmin:true ----
   const grants = [{ uid: "u2", grantedTo: "janes_kitchen", granted: true }];
-  const adminUser = { uid: "admin1", email: "maggie13a2z@gmail.com", username: "maggie", contactInfo: "", avatar: "", isAdmin: true };
+  const adminUser = { uid: "admin1", email: "maggie13a2z@gmail.com", username: "maggie", contactInfo: "", avatar: "", isAdmin: true, emailVerified: true };
+  let reportsMock = [
+    { id: "r1", communityRecipeId: "friend1_abc", reporterUid: "u9", reason: "wrong ingredients", recipeTitle: "Golabki", recipeAuthor: "babcia_anna" },
+  ];
+  const removedRecipeIds = [];
   window.MG = {
     getCurrentUser: () => adminUser,
     getCloudRecipes: () => [],
@@ -766,6 +941,13 @@ async function main() {
     },
     grantFriendAccess: async (username) => { grants.push({ uid: "u3", grantedTo: username, granted: true }); return username; },
     revokeFriendAccess: async (uid) => { const i = grants.findIndex((g) => g.uid === uid); if (i >= 0) grants.splice(i, 1); },
+    isAdmin: () => true,
+    listReports: async () => reportsMock.slice(),
+    dismissReport: async (reportId) => { reportsMock = reportsMock.filter((r) => r.id !== reportId); },
+    removeReportedRecipe: async (communityRecipeId, reportId) => {
+      removedRecipeIds.push(communityRecipeId);
+      reportsMock = reportsMock.filter((r) => r.id !== reportId);
+    },
   };
   go("#/profile");
   assert(!!window.document.getElementById("grant-lookup-btn"), "profile page shows the friends & family admin panel for the admin account");
@@ -807,6 +989,35 @@ async function main() {
   await flush();
   assert(!grants.some((g) => g.uid === "u2"), "revoking a grant calls window.MG.revokeFriendAccess");
   assert(!/janes_kitchen/.test(window.document.getElementById("grants-list").textContent), "admin panel list refreshes after a revoke");
+
+  assert(!!window.document.getElementById("review-reports-btn"), "admin profile shows a Review Reports button");
+  window.document.getElementById("review-reports-btn").click();
+  assert(window.location.hash === "#/admin/reports", "Review Reports navigates to the admin reports screen");
+
+  // ---- Admin: review reports ----
+  go("#/admin/reports");
+  await flush();
+  assert(/Golabki/.test(window.document.getElementById("reports-list").textContent), "reports list shows the reported recipe's title");
+  assert(/babcia_anna/.test(window.document.getElementById("reports-list").textContent), "reports list shows the reported recipe's author");
+  assert(/wrong ingredients/.test(window.document.getElementById("reports-list").textContent), "reports list shows the report's reason");
+
+  const dismissReportBtn = window.document.querySelector('[data-dismiss-report="r1"]');
+  const removeReportBtn = window.document.querySelector('[data-remove-report="r1"]');
+  assert(!!dismissReportBtn && !!removeReportBtn, "each report row offers Dismiss and Remove Recipe");
+
+  // A non-admin can't see this screen at all.
+  window.MG.isAdmin = () => false;
+  go("#/admin/reports");
+  assert(/Only the app owner/i.test(window.document.getElementById("view").textContent), "a non-admin visiting #/admin/reports is turned away");
+  window.MG.isAdmin = () => true;
+
+  go("#/admin/reports");
+  await flush();
+  window.document.querySelector('[data-remove-report="r1"]').click();
+  await flush();
+  assert(removedRecipeIds.includes("friend1_abc"), "Remove Recipe calls window.MG.removeReportedRecipe with the community recipe id");
+  assert(!reportsMock.some((r) => r.id === "r1"), "removing the recipe also clears its report");
+  assert(/all clear/i.test(window.document.getElementById("reports-list").textContent), "reports list shows an all-clear message once empty");
 
   window.MG = undefined; // don't leak the mock into anything after this point
 

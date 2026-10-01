@@ -43,6 +43,13 @@ const ICONS = {
   egg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3C8 8 6 12.5 6 15.5a6 6 0 0 0 12 0C18 12.5 16 8 12 3Z"/></svg>`,
   carrot: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 13c4-4 8-5.5 9.5-4S19 13 15 17c-2.5 2.5-5.5 3-7 1.5S8.5 15.5 11 13Z"/><path d="M9 19l-2.5 2.5M13 4.5 15 3M11.5 6 13 4M15.5 6l1-1.5"/></svg>`,
   jar: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8v3.2c1.2.6 2 1.9 2 3.3v9a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 6 18.5v-9c0-1.4.8-2.7 2-3.3V3Z"/><path d="M6.5 12h11"/></svg>`,
+  // ---- Added when Friends & Family sharing, Settings, and admin report
+  // review went from stubs to real screens -- each a brand-new symbol, per
+  // the same one-icon-per-slot rule as the rest of this object.
+  giftBox: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="9" width="17" height="11" rx="1.2"/><path d="M3.5 13h17"/><path d="M12 9v11"/><path d="M12 9C9 9 7.5 7.5 7.5 6a2.5 2.5 0 0 1 5 0c0 .7-.2 1.4-.5 2M12 9c3 0 4.5-1.5 4.5-3a2.5 2.5 0 0 0-5 0c0 .7.2 1.4.5 2"/></svg>`,
+  flag: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v18"/><path d="M5 4h11l-2.5 3.5L16 11H5"/></svg>`,
+  printIcon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8V3h10v5"/><rect x="4" y="8" width="16" height="8" rx="1.2"/><path d="M7 14h10v7H7z"/></svg>`,
+  shareIcon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><path d="M8.1 10.8 15.9 6.2M8.1 13.2l7.8 4.6"/></svg>`,
 };
 
 // Recipes are organized into these folders (plus an "uncategorized" bucket
@@ -62,6 +69,33 @@ const RECIPE_CATEGORIES = [
 // local cloudRecipes cache below is kept fresh by its "mg-recipes-changed"
 // event, so reads here stay synchronous either way.
 const STORAGE_KEY = "mg_recipes_v1";
+
+// ---------- Theme (Settings: light/dark) ----------
+// Purely a per-device display preference -- kept in localStorage rather
+// than synced to the account, same as any other browser-level setting.
+// Applied immediately (not waiting for DOMContentLoaded) so there's no
+// flash of the wrong theme on load.
+const THEME_KEY = "mg_theme_v1";
+function getStoredTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+  } catch (e) { /* localStorage unavailable */ }
+  try {
+    if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  } catch (e) { /* matchMedia unavailable */ }
+  return "light";
+}
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme === "dark" ? "dark" : "light");
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", theme === "dark" ? "#211f1b" : "#8aab8f");
+}
+function setTheme(theme) {
+  try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* ignore */ }
+  applyTheme(theme);
+}
+applyTheme(getStoredTheme());
 
 function hasCloud() {
   return typeof window.MG !== "undefined";
@@ -393,6 +427,8 @@ function renderHome() {
     <div class="quick-links">
       <div class="quick-link" data-route="#/community">${ICONS.people} Community Recipes</div>
       <div class="quick-link" data-route="#/substitutions">${ICONS.swap} Substitution Tips</div>
+      <div class="quick-link" data-route="#/friends">${ICONS.giftBox} Friends & Family</div>
+      <div class="quick-link" data-route="#/settings">${ICONS.gear} Settings</div>
     </div>
   `;
 }
@@ -403,8 +439,11 @@ function renderRecipeCardRows(recipes) {
     ? recipes.map((r) => `
         <div class="recipe-card" data-open-recipe="${r.id}">
           <div>
-            <div class="rc-title">${escapeHtml(r.title || "(untitled recipe)")}${r.shared ? `<span class="tag">Shared</span>` : ""}</div>
-            <div class="rc-meta">${r.servings || "?"} servings · ${(r.ingredients || []).length} ingredients</div>
+            ${r.photo ? `<img class="recipe-photo-thumb" src="${r.photo}" alt="">` : ""}
+            <div>
+              <div class="rc-title">${escapeHtml(r.title || "(untitled recipe)")}${r.shared ? `<span class="tag">Shared</span>` : ""}</div>
+              <div class="rc-meta">${r.servings || "?"} servings · ${(r.ingredients || []).length} ingredients</div>
+            </div>
           </div>
           <span>›</span>
         </div>`).join("")
@@ -440,14 +479,52 @@ function renderRecipesList() {
     ${pageHeader("Recipes")}
     ${syncNote}
     ${emptyNote}
-    <div class="home-grid">
-      ${folderTiles}
-      ${uncategorizedTile}
+    ${recipes.length ? `
+    <div class="field" style="margin-bottom:14px;">
+      <label for="recipes-search">Search your recipes</label>
+      <input type="text" id="recipes-search" placeholder="Search by title or ingredient…">
+    </div>` : ""}
+    <div id="recipes-folders">
+      <div class="home-grid">
+        ${folderTiles}
+        ${uncategorizedTile}
+      </div>
     </div>
+    <div id="recipes-search-results" style="display:none;"></div>
     <div class="recipe-actions">
       <button class="btn" id="new-recipe-btn">+ New Recipe</button>
     </div>
   `;
+}
+
+function wireRecipesList() {
+  const searchInput = document.getElementById("recipes-search");
+  if (!searchInput) return; // no recipes yet -> no search box to wire
+  const foldersDiv = document.getElementById("recipes-folders");
+  const resultsDiv = document.getElementById("recipes-search-results");
+  const recipes = getRecipes();
+
+  searchInput.addEventListener("input", () => {
+    const q = searchInput.value.trim().toLowerCase();
+    if (!q) {
+      resultsDiv.style.display = "none";
+      resultsDiv.innerHTML = "";
+      foldersDiv.style.display = "";
+      return;
+    }
+    foldersDiv.style.display = "none";
+    resultsDiv.style.display = "";
+    const filtered = recipes.filter((r) =>
+      (r.title || "").toLowerCase().includes(q) ||
+      (r.ingredients || []).some((i) => (i.name || "").toLowerCase().includes(q))
+    );
+    resultsDiv.innerHTML = filtered.length
+      ? renderRecipeCardRows(filtered)
+      : `<p class="muted-msg">No recipes match that search.</p>`;
+    resultsDiv.querySelectorAll("[data-open-recipe]").forEach((n) => {
+      n.addEventListener("click", () => { location.hash = "#/recipe/edit/" + n.getAttribute("data-open-recipe"); });
+    });
+  });
 }
 
 function renderRecipeCategory(categoryKey) {
@@ -491,6 +568,17 @@ function renderRecipeForm(id) {
         </div>
       </div>
 
+      <div style="margin-bottom:6px;">
+        <label>Photo <span class="muted-msg">(optional)</span></label>
+        <input type="file" id="recipe-photo-input" accept="image/*" style="display:none;">
+        <div class="recipe-actions" style="margin-top:0;">
+          <button class="btn secondary" type="button" id="recipe-photo-btn">${existing && existing.photo ? "Change Photo" : "Add Photo"}</button>
+          ${existing && existing.photo ? `<button class="btn secondary" type="button" id="recipe-photo-remove-btn">Remove Photo</button>` : ""}
+        </div>
+        <p id="recipe-photo-status" class="hint"></p>
+        <img id="recipe-photo-preview" class="recipe-photo-preview" src="${existing && existing.photo ? existing.photo : ""}" style="${existing && existing.photo ? "" : "display:none;"}" alt="">
+      </div>
+
       <label>Ingredients</label>
       <div class="ing-header"><span>Qty</span><span>Unit</span><span>Ingredient</span><span></span></div>
       <div id="ingredient-rows"></div>
@@ -527,6 +615,8 @@ function renderRecipeForm(id) {
 
       <div class="recipe-actions">
         <button class="btn" id="save-recipe-btn">Save Recipe</button>
+        ${existing ? `<button class="btn secondary" type="button" id="print-recipe-btn">${ICONS.printIcon} Print</button>` : ""}
+        ${existing ? `<button class="btn secondary" type="button" id="share-recipe-btn">${ICONS.shareIcon} Share</button>` : ""}
         ${existing ? `<button class="btn danger" id="delete-recipe-btn">Delete</button>` : ""}
       </div>
     </div>
@@ -601,6 +691,59 @@ function wireRecipeForm(id) {
   const existing = id ? getRecipe(id) : null;
   const rowsContainer = document.getElementById("ingredient-rows");
 
+  // Tracked outside the DOM (rather than re-reading the <img> each time)
+  // so "Remove Photo" can clear it even though the <img> has no file input
+  // of its own to reset.
+  let currentPhoto = existing && existing.photo ? existing.photo : "";
+  const photoInput = document.getElementById("recipe-photo-input");
+  const photoBtn = document.getElementById("recipe-photo-btn");
+  const photoActionsRow = photoBtn.parentElement;
+  let photoRemoveBtn = document.getElementById("recipe-photo-remove-btn");
+  const photoStatus = document.getElementById("recipe-photo-status");
+  const photoPreview = document.getElementById("recipe-photo-preview");
+
+  function wireRemoveBtn() {
+    photoRemoveBtn.addEventListener("click", () => {
+      currentPhoto = "";
+      photoPreview.src = "";
+      photoPreview.style.display = "none";
+      photoRemoveBtn.remove();
+      photoRemoveBtn = null;
+      photoBtn.textContent = "Add Photo";
+      photoStatus.textContent = "Photo removed — click Save Recipe to keep this change.";
+    });
+  }
+  if (photoRemoveBtn) wireRemoveBtn();
+
+  photoBtn.addEventListener("click", () => photoInput.click());
+  photoInput.addEventListener("change", async () => {
+    const file = photoInput.files[0];
+    if (!file) return;
+    photoBtn.disabled = true;
+    photoStatus.textContent = "Loading photo…";
+    try {
+      currentPhoto = await fileToRecipePhotoDataUrl(file);
+      photoPreview.src = currentPhoto;
+      photoPreview.style.display = "";
+      photoBtn.textContent = "Change Photo";
+      photoStatus.textContent = "Photo ready — click Save Recipe to keep it.";
+      // A fresh photo (e.g. on a brand-new recipe) may not have had a
+      // Remove button yet -- add one now so it can be backed out before saving.
+      if (!photoRemoveBtn) {
+        photoRemoveBtn = document.createElement("button");
+        photoRemoveBtn.type = "button";
+        photoRemoveBtn.className = "btn secondary";
+        photoRemoveBtn.id = "recipe-photo-remove-btn";
+        photoRemoveBtn.textContent = "Remove Photo";
+        photoActionsRow.appendChild(photoRemoveBtn);
+        wireRemoveBtn();
+      }
+    } catch (err) {
+      photoStatus.textContent = "Couldn't use that photo: " + (err.message || err);
+    }
+    photoBtn.disabled = false;
+  });
+
   if (existing && existing.ingredients && existing.ingredients.length) {
     existing.ingredients.forEach((i) => addIngredientRow(rowsContainer, i.qty, i.unit, i.name));
   } else {
@@ -649,6 +792,7 @@ function wireRecipeForm(id) {
       title, servings: isNaN(servings) ? 0 : servings, ingredients, steps,
       category: selectedCategory,
       shared: nowShared,
+      photo: currentPhoto,
     };
     saveBtn.disabled = true;
     saveBtn.textContent = "Saving…";
@@ -681,6 +825,85 @@ function wireRecipeForm(id) {
         }
       }
     });
+  }
+
+  const printBtn = document.getElementById("print-recipe-btn");
+  if (printBtn) {
+    printBtn.addEventListener("click", () => {
+      printRecipe(existing);
+    });
+  }
+
+  const shareBtn = document.getElementById("share-recipe-btn");
+  if (shareBtn) {
+    shareBtn.addEventListener("click", () => {
+      shareRecipeNatively(existing);
+    });
+  }
+}
+
+// ---------- Print / Share a single recipe ----------
+// There's no separate read-only recipe page (opening a recipe goes straight
+// to this edit form), so printing works by filling a normally-hidden
+// #print-area with a plain, formatted copy of the recipe and calling
+// window.print() -- the print stylesheet (css/style.css) hides everything
+// else on the page for that one print job.
+function recipePrintHtml(recipe) {
+  const ingredientLines = (recipe.ingredients || []).length
+    ? `<ul>${recipe.ingredients.map((i) => {
+        const qtyText = i.qty === undefined || i.qty === null || i.qty === "" || isNaN(i.qty) ? "" : fmtQty(i.qty);
+        return `<li>${escapeHtml([qtyText, i.unit, i.name].filter(Boolean).join(" "))}</li>`;
+      }).join("")}</ul>`
+    : `<p>No ingredients listed.</p>`;
+  return `
+    <h1>${escapeHtml(recipe.title || "(untitled recipe)")}</h1>
+    <p class="print-meta">${recipe.servings || "?"} servings</p>
+    <h2>Ingredients</h2>
+    ${ingredientLines}
+    ${recipe.steps ? `<h2>Steps</h2><p style="white-space:pre-wrap;">${escapeHtml(recipe.steps)}</p>` : ""}
+  `;
+}
+
+function printRecipe(recipe) {
+  let printArea = document.getElementById("print-area");
+  if (!printArea) {
+    printArea = document.createElement("div");
+    printArea.id = "print-area";
+    document.body.appendChild(printArea);
+  }
+  printArea.innerHTML = recipePrintHtml(recipe);
+  window.print();
+}
+
+// navigator.share() (native share sheet) where it's available; otherwise
+// falls back to copying a plain-text version of the recipe to the
+// clipboard, which works everywhere and still gets the recipe out of the app.
+function recipeShareText(recipe) {
+  const lines = [recipe.title || "(untitled recipe)", `${recipe.servings || "?"} servings`, "", "Ingredients:"];
+  (recipe.ingredients || []).forEach((i) => {
+    const qtyText = i.qty === undefined || i.qty === null || i.qty === "" || isNaN(i.qty) ? "" : fmtQty(i.qty);
+    lines.push(`- ${[qtyText, i.unit, i.name].filter(Boolean).join(" ")}`);
+  });
+  if (recipe.steps) { lines.push("", "Steps:", recipe.steps); }
+  return lines.join("\n");
+}
+
+async function shareRecipeNatively(recipe) {
+  const text = recipeShareText(recipe);
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: recipe.title || "Recipe", text });
+      return;
+    } catch (err) {
+      if (err && err.name === "AbortError") return; // person cancelled the share sheet
+      // fall through to clipboard on any other failure
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("This recipe was copied to your clipboard — paste it into a message or email to share it.");
+  } catch (err) {
+    alert("Sorry, this device doesn't support sharing or copying automatically. You can still copy the recipe by hand.");
   }
 }
 
@@ -1599,6 +1822,15 @@ function renderProfile() {
     const localCount = migrationDismissed ? 0 : getLocalRecipes().length;
     return `
       ${pageHeader("Profile")}
+      ${user.emailVerified === false ? `
+      <div class="disclaimer">
+        <strong>Please verify your email.</strong> We sent a link to ${escapeHtml(user.email)} when you signed up — click it so you can recover your account if you ever lose access.
+        <div class="recipe-actions" style="margin-top:8px;">
+          <button class="btn secondary" type="button" id="resend-verify-btn">Resend Verification Email</button>
+          <button class="btn secondary" type="button" id="recheck-verify-btn">I've Verified — Check Again</button>
+        </div>
+        <p id="verify-status" class="hint" style="margin-bottom:0;"></p>
+      </div>` : ""}
       <div class="card">
         <h2>Signed in</h2>
         <div class="avatar-row">
@@ -1654,9 +1886,24 @@ function renderProfile() {
         <p id="grant-status" class="hint"></p>
         <div id="grant-preview"></div>
         <div id="grants-list" style="margin-top:10px;">Loading current list…</div>
+      </div>
+      <div class="card">
+        <h2>Community moderation</h2>
+        <p class="hint">Recipes get flagged here when someone uses the Report button on a Community Recipe — review, remove, or dismiss them without needing the Firebase console.</p>
+        <div class="recipe-actions">
+          <button class="btn secondary" type="button" id="review-reports-btn">${ICONS.flag} Review Reports</button>
+        </div>
       </div>` : ""}
       <div class="card">
         <button class="btn danger" id="sign-out-btn">Sign Out</button>
+      </div>
+      <div class="card">
+        <h2>Danger zone</h2>
+        <p class="hint">Permanently delete your account, your recipes, and your profile. This can't be undone.</p>
+        <div class="recipe-actions">
+          <button class="btn danger" type="button" id="delete-account-btn">Delete My Account</button>
+        </div>
+        <div id="delete-account-box"></div>
       </div>
     `;
   }
@@ -1733,6 +1980,33 @@ function fileToAvatarDataUrl(file) {
   });
 }
 
+// Same idea as fileToAvatarDataUrl (a small JPEG data URL, so a recipe
+// photo can live directly on the recipe's Firestore document -- no paid
+// Storage bucket needed) but NOT cropped to a square, since a photo of a
+// finished dish usually isn't -- just scaled down to fit within 640x480 so
+// the document stays comfortably under Firestore's 1MB doc size limit.
+function fileToRecipePhotoDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Sorry, that photo couldn't be read."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("That file doesn't look like a valid image."));
+      img.onload = () => {
+        const maxW = 640, maxH = 480;
+        const scale = Math.min(1, maxW / img.width, maxH / img.height);
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", 0.75));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 function renderGrantRow(g) {
   const avatarHtml = g.avatar
     ? `<img src="${g.avatar}" alt="" class="grant-avatar">`
@@ -1774,6 +2048,42 @@ function renderGrantPreview(profile) {
 
 function wireProfile() {
   if (hasCloud() && isSignedIn()) {
+    // Firebase's local user object only reflects email verification as of
+    // the last sign-in -- re-check on every Profile visit (best-effort; a
+    // failure here, e.g. offline, just leaves the banner as it was) so
+    // clicking the emailed link and coming back here updates it without
+    // needing a full sign-out/sign-in.
+    if (window.MG.refreshEmailVerified) window.MG.refreshEmailVerified().catch(() => {});
+
+    const resendVerifyBtn = document.getElementById("resend-verify-btn");
+    if (resendVerifyBtn) {
+      const verifyStatus = document.getElementById("verify-status");
+      resendVerifyBtn.addEventListener("click", async () => {
+        resendVerifyBtn.disabled = true;
+        verifyStatus.textContent = "Sending…";
+        try {
+          await window.MG.resendVerificationEmail();
+          verifyStatus.textContent = "Sent — check your inbox (and spam folder).";
+        } catch (err) {
+          verifyStatus.textContent = "Couldn't send that: " + (err.message || err);
+        }
+        resendVerifyBtn.disabled = false;
+      });
+      const recheckBtn = document.getElementById("recheck-verify-btn");
+      recheckBtn.addEventListener("click", async () => {
+        recheckBtn.disabled = true;
+        verifyStatus.textContent = "Checking…";
+        try {
+          await window.MG.refreshEmailVerified();
+          verifyStatus.textContent = window.MG.getCurrentUser().emailVerified
+            ? "Verified! Refreshing…" : "Not verified yet — click the link in the email first.";
+        } catch (err) {
+          verifyStatus.textContent = "Couldn't check: " + (err.message || err);
+        }
+        recheckBtn.disabled = false;
+      });
+    }
+
     const avatarInput = document.getElementById("avatar-input");
     const avatarBtn = document.getElementById("avatar-btn");
     const avatarStatus = document.getElementById("avatar-status");
@@ -1925,6 +2235,51 @@ function wireProfile() {
         signOutBtn.disabled = false;
       }
     });
+
+    const reviewReportsBtn = document.getElementById("review-reports-btn");
+    if (reviewReportsBtn) {
+      reviewReportsBtn.addEventListener("click", () => { location.hash = "#/admin/reports"; });
+    }
+
+    const deleteAccountBtn = document.getElementById("delete-account-btn");
+    if (deleteAccountBtn) {
+      const deleteBox = document.getElementById("delete-account-box");
+      deleteAccountBtn.addEventListener("click", () => {
+        if (deleteBox.children.length) { deleteBox.innerHTML = ""; return; }
+        deleteBox.innerHTML = `
+          <div class="card" style="margin-top:10px; border-color: var(--danger);">
+            <p class="hint" style="margin-bottom:10px;">This deletes your recipes, meal plan, username, and profile, and removes any recipes you've shared to the Community. It can't be undone. Enter your password to confirm.</p>
+            <div class="field">
+              <label for="delete-account-password">Password</label>
+              <input type="password" id="delete-account-password" placeholder="Your password">
+            </div>
+            <div class="recipe-actions">
+              <button class="btn danger" type="button" id="confirm-delete-account-btn">Permanently Delete My Account</button>
+              <button class="btn secondary" type="button" id="cancel-delete-account-btn">Cancel</button>
+            </div>
+            <p id="delete-account-status" class="hint"></p>
+          </div>
+        `;
+        document.getElementById("cancel-delete-account-btn").addEventListener("click", () => { deleteBox.innerHTML = ""; });
+        document.getElementById("confirm-delete-account-btn").addEventListener("click", async (e) => {
+          const btn = e.currentTarget;
+          const password = document.getElementById("delete-account-password").value;
+          const status = document.getElementById("delete-account-status");
+          if (!password) { status.textContent = "Please enter your password."; return; }
+          if (!confirm("Are you absolutely sure? This permanently deletes your account and everything in it.")) return;
+          btn.disabled = true;
+          status.textContent = "Deleting…";
+          try {
+            await window.MG.deleteAccount(password);
+            // A successful deleteUser() signs the account out, which fires
+            // "mg-auth-changed" and lands back on the signed-out Profile view.
+          } catch (err) {
+            status.textContent = "Couldn't delete your account: " + (err.message || err);
+            btn.disabled = false;
+          }
+        });
+      });
+    }
     return;
   }
 
@@ -2005,8 +2360,11 @@ function renderCommunityCardRows(recipes, showCategoryTag) {
         return `
           <div class="recipe-card" data-open-community="${r.id}">
             <div>
-              <div class="rc-title">${escapeHtml(r.title || "(untitled recipe)")}${catMeta ? `<span class="tag">${catMeta.label}</span>` : ""}</div>
-              <div class="rc-meta">by @${escapeHtml(r.authorUsername || "unknown")} · ${r.servings || "?"} servings</div>
+              ${r.photo ? `<img class="recipe-photo-thumb" src="${r.photo}" alt="">` : ""}
+              <div>
+                <div class="rc-title">${escapeHtml(r.title || "(untitled recipe)")}${catMeta ? `<span class="tag">${catMeta.label}</span>` : ""}</div>
+                <div class="rc-meta">by @${escapeHtml(r.authorUsername || "unknown")} · ${r.servings || "?"} servings</div>
+              </div>
             </div>
             <span>›</span>
           </div>`;
@@ -2151,6 +2509,7 @@ function wireCommunityDetail(id) {
         }).join("")
       : `<p class="muted-msg">No ingredients listed.</p>`;
     body.innerHTML = `
+      ${recipe.photo ? `<img class="recipe-detail-photo" src="${recipe.photo}" alt="">` : ""}
       <h2>${escapeHtml(recipe.title || "(untitled recipe)")}</h2>
       <p class="rc-meta">Shared by @${escapeHtml(recipe.authorUsername || "unknown")} · ${recipe.servings || "?"} servings</p>
       <label style="margin-top:14px;">Ingredients</label>
@@ -2181,6 +2540,7 @@ function wireCommunityDetail(id) {
         id: newId(),
         title: recipe.title, servings: recipe.servings, ingredients: recipe.ingredients,
         steps: recipe.steps, category: recipe.category || "", shared: false,
+        photo: recipe.photo || "",
       };
       btn.disabled = true;
       btn.textContent = "Saving…";
@@ -2312,25 +2672,269 @@ function renderSubstitutionCategory(key) {
   `;
 }
 
-// ---------- Stub views (Phase 2 / 3 features) ----------
-function renderStub(title, phaseNote) {
+// ---------- View: Settings ----------
+function renderSettings() {
+  const theme = getStoredTheme();
   return `
-    ${pageHeader(title)}
-    <div class="stub-note">
-      <strong>${title}</strong> is planned but not built yet — ${phaseNote}
+    ${pageHeader("Settings")}
+    <div class="card">
+      <h2>Appearance</h2>
+      <div class="theme-toggle-row">
+        <div>
+          <div style="font-weight:600;">Dark mode</div>
+          <p class="hint" style="margin:2px 0 0;">Easier on the eyes in a dim kitchen.</p>
+        </div>
+        <button class="theme-switch ${theme === "dark" ? "on" : ""}" type="button" id="theme-switch-btn" aria-pressed="${theme === "dark"}" title="Toggle dark mode"></button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Units</h2>
+      <p class="hint" style="margin-bottom:0;">A metric (g, mL, °C) vs. US customary (cups, oz, °F) toggle is still on the roadmap — for now the whole app uses US customary units.</p>
     </div>
   `;
+}
+
+function wireSettings() {
+  const btn = document.getElementById("theme-switch-btn");
+  btn.addEventListener("click", () => {
+    const next = getStoredTheme() === "dark" ? "light" : "dark";
+    setTheme(next);
+    btn.classList.toggle("on", next === "dark");
+    btn.setAttribute("aria-pressed", String(next === "dark"));
+  });
+}
+
+// ---------- View: Friends & Family (direct recipe sharing) ----------
+function renderFriendSendPreview(profile, recipes) {
+  const avatarHtml = profile.avatar
+    ? `<img src="${profile.avatar}" alt="" class="grant-preview-avatar">`
+    : `<span class="grant-preview-avatar placeholder">${ICONS.person}</span>`;
+  const recipeOptions = recipes.map((r) => `<option value="${r.id}">${escapeHtml(r.title || "(untitled recipe)")}</option>`).join("");
+  return `
+    <div class="grant-preview-card">
+      ${avatarHtml}
+      <div class="grant-preview-details">
+        <div class="grant-preview-username">@${escapeHtml(profile.username)}</div>
+      </div>
+    </div>
+    ${recipes.length ? `
+    <div class="field" style="margin-top:6px;">
+      <label for="friend-send-recipe">Which recipe?</label>
+      <select id="friend-send-recipe">${recipeOptions}</select>
+    </div>
+    <div class="recipe-actions">
+      <button class="btn" id="friend-send-btn">Send Recipe</button>
+      <button class="btn secondary" type="button" id="friend-send-cancel-btn">Cancel</button>
+    </div>` : `<p class="hint">You don't have any saved recipes to send yet. <a href="#/recipe/new">Add one first</a>.</p>`}
+  `;
+}
+
+function renderFriends() {
+  if (!(hasCloud() && isSignedIn())) {
+    return `
+      ${pageHeader("Friends & Family")}
+      <p class="hint"><a href="#/profile">Sign in</a> to send recipes to friends and family, or to see what's been shared with you.</p>
+    `;
+  }
+  return `
+    ${pageHeader("Friends & Family")}
+    <div class="card">
+      <h2>Send a recipe</h2>
+      <p class="hint">Look up a friend by their username, then send one of your recipes straight to their account.</p>
+      <div class="row-flex">
+        <div class="field" style="flex:1; min-width:160px;">
+          <label for="friend-username">Their username</label>
+          <input type="text" id="friend-username" placeholder="e.g. janes_kitchen">
+        </div>
+      </div>
+      <div class="recipe-actions">
+        <button class="btn" id="friend-lookup-btn">Look Up</button>
+      </div>
+      <p id="friend-lookup-status" class="hint"></p>
+      <div id="friend-lookup-preview"></div>
+    </div>
+    <div class="card">
+      <h2>Shared with you</h2>
+      <div id="shared-with-me-list">Loading…</div>
+    </div>
+  `;
+}
+
+function wireFriends() {
+  if (!(hasCloud() && isSignedIn())) return;
+
+  const lookupBtn = document.getElementById("friend-lookup-btn");
+  const status = document.getElementById("friend-lookup-status");
+  const preview = document.getElementById("friend-lookup-preview");
+  const usernameInput = document.getElementById("friend-username");
+
+  lookupBtn.addEventListener("click", async () => {
+    const username = usernameInput.value.trim();
+    if (!username) { status.textContent = "Please enter a username."; return; }
+    preview.innerHTML = "";
+    lookupBtn.disabled = true;
+    status.textContent = "Looking up…";
+    try {
+      const profile = await window.MG.lookupPublicProfile(username);
+      status.textContent = "";
+      preview.innerHTML = renderFriendSendPreview(profile, getRecipes());
+      const cancelBtn = document.getElementById("friend-send-cancel-btn");
+      if (cancelBtn) cancelBtn.addEventListener("click", () => { preview.innerHTML = ""; status.textContent = ""; });
+      const sendBtn = document.getElementById("friend-send-btn");
+      if (sendBtn) {
+        sendBtn.addEventListener("click", async () => {
+          const recipeId = document.getElementById("friend-send-recipe").value;
+          const recipe = getRecipe(recipeId);
+          if (!recipe) { status.textContent = "Please pick a recipe."; return; }
+          sendBtn.disabled = true;
+          status.textContent = "Sending…";
+          try {
+            await window.MG.shareRecipeToFriend(profile.uid, recipe);
+            status.textContent = `Sent "${recipe.title}" to @${profile.username}.`;
+            usernameInput.value = "";
+            preview.innerHTML = "";
+          } catch (err) {
+            status.textContent = "Couldn't send that: " + (err.message || err);
+            sendBtn.disabled = false;
+          }
+        });
+      }
+    } catch (err) {
+      status.textContent = "Couldn't look that up: " + (err.message || err);
+    }
+    lookupBtn.disabled = false;
+  });
+
+  function loadInbox() {
+    const listEl = document.getElementById("shared-with-me-list");
+    window.MG.listSharedWithMe().then((items) => {
+      listEl.innerHTML = items.length
+        ? items.map((item) => `
+            <div class="list-row" data-share-id="${item.id}">
+              <div class="list-row-main">
+                <div class="list-row-title">${escapeHtml((item.recipe && item.recipe.title) || "(untitled recipe)")}</div>
+                <div class="list-row-meta">from @${escapeHtml(item.fromUsername || "someone")}</div>
+              </div>
+              <div class="list-row-actions">
+                <button class="btn" data-add-share="${item.id}">Add to My Recipes</button>
+                <button class="btn secondary" data-dismiss-share="${item.id}">Dismiss</button>
+              </div>
+            </div>`).join("")
+        : `<p class="muted-msg">No one has shared a recipe with you yet.</p>`;
+      listEl.querySelectorAll("[data-add-share]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const shareId = btn.getAttribute("data-add-share");
+          const item = items.find((i) => i.id === shareId);
+          if (!item) return;
+          btn.disabled = true;
+          try {
+            await upsertRecipe({ id: newId(), ...item.recipe, shared: false, category: (item.recipe && item.recipe.category) || "" });
+            await window.MG.dismissSharedItem(shareId);
+            loadInbox();
+          } catch (err) {
+            alert("Couldn't add that recipe: " + (err.message || err));
+            btn.disabled = false;
+          }
+        });
+      });
+      listEl.querySelectorAll("[data-dismiss-share]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const shareId = btn.getAttribute("data-dismiss-share");
+          btn.disabled = true;
+          try {
+            await window.MG.dismissSharedItem(shareId);
+            loadInbox();
+          } catch (err) {
+            alert("Couldn't dismiss that: " + (err.message || err));
+            btn.disabled = false;
+          }
+        });
+      });
+    }).catch((err) => {
+      listEl.innerHTML = `<p class="muted-msg">Couldn't load this: ${escapeHtml(err.message || String(err))}</p>`;
+    });
+  }
+  loadInbox();
+}
+
+// ---------- View: Admin — review community-recipe reports ----------
+function renderAdminReports() {
+  if (!(hasCloud() && isSignedIn() && window.MG.isAdmin())) {
+    return `
+      ${pageHeader("Review Reports", "#/profile")}
+      <p class="hint">Only the app owner can view this.</p>
+    `;
+  }
+  return `
+    ${pageHeader("Review Reports", "#/profile")}
+    <p class="hint">Recipes reported through the Report button on a Community Recipe page land here.</p>
+    <div id="reports-list">Loading…</div>
+  `;
+}
+
+function wireAdminReports() {
+  if (!(hasCloud() && isSignedIn() && window.MG.isAdmin())) return;
+  const listEl = document.getElementById("reports-list");
+
+  function load() {
+    window.MG.listReports().then((reports) => {
+      listEl.innerHTML = reports.length
+        ? reports.map((r) => `
+            <div class="list-row" data-report-id="${r.id}" style="align-items:flex-start;">
+              <div class="list-row-main">
+                <div class="list-row-title">${escapeHtml(r.recipeTitle || "(recipe unavailable)")}</div>
+                ${r.recipeAuthor ? `<div class="list-row-meta">by @${escapeHtml(r.recipeAuthor)}</div>` : ""}
+                ${r.reason ? `<div class="list-row-meta">Reason: ${escapeHtml(r.reason)}</div>` : ""}
+              </div>
+              <div class="list-row-actions">
+                ${r.communityRecipeId ? `<button class="btn danger" data-remove-report="${r.id}" data-recipe-id="${r.communityRecipeId}">Remove Recipe</button>` : ""}
+                <button class="btn secondary" data-dismiss-report="${r.id}">Dismiss</button>
+              </div>
+            </div>`).join("")
+        : `<p class="muted-msg">No open reports — all clear!</p>`;
+      listEl.querySelectorAll("[data-dismiss-report]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          try {
+            await window.MG.dismissReport(btn.getAttribute("data-dismiss-report"));
+            load();
+          } catch (err) {
+            alert("Couldn't dismiss that: " + (err.message || err));
+            btn.disabled = false;
+          }
+        });
+      });
+      listEl.querySelectorAll("[data-remove-report]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          if (!confirm("Remove this recipe from Community Recipes? This can't be undone.")) return;
+          btn.disabled = true;
+          try {
+            await window.MG.removeReportedRecipe(btn.getAttribute("data-recipe-id"), btn.getAttribute("data-remove-report"));
+            communityCache = null;
+            load();
+          } catch (err) {
+            alert("Couldn't remove that: " + (err.message || err));
+            btn.disabled = false;
+          }
+        });
+      });
+    }).catch((err) => {
+      listEl.innerHTML = `<p class="muted-msg">Couldn't load reports: ${escapeHtml(err.message || String(err))}</p>`;
+    });
+  }
+  load();
 }
 
 // ---------- Router ----------
 const routes = {
   "#/home": { render: renderHome },
-  "#/recipes": { render: renderRecipesList },
+  "#/recipes": { render: renderRecipesList, wire: wireRecipesList },
   "#/recipe/new": { render: () => renderRecipeForm(null), wire: () => wireRecipeForm(null) },
-  "#/friends": { render: () => renderStub("Friends & Family", "sharing recipes with friends and family is coming in a future update, now that accounts are in place.") },
-  "#/settings": { render: () => renderStub("Settings", "unit system and theme are coming in a later phase — for now the app uses US customary units and light mode.") },
+  "#/friends": { render: renderFriends, wire: wireFriends },
+  "#/settings": { render: renderSettings, wire: wireSettings },
   "#/profile": { render: renderProfile, wire: wireProfile },
   "#/create": { render: renderRecipeCreator, wire: wireRecipeCreator },
+  "#/admin/reports": { render: renderAdminReports, wire: wireAdminReports },
 };
 
 function currentRoute() {
@@ -2475,7 +3079,7 @@ const MEAL_PLAN_ROUTES = ["meal-plan-week", "meal-plan-day", "meal-plan-grocery"
 
 window.addEventListener("mg-auth-changed", () => {
   updateProfileButton();
-  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale-convert", "allergen-measurements", ...MEAL_PLAN_ROUTES]);
+  refreshIfRelevant(["#/profile", "#/recipes", "recipe-category", "scale-convert", "allergen-measurements", "#/friends", "#/admin/reports", ...MEAL_PLAN_ROUTES]);
 });
 window.addEventListener("mg-recipes-changed", () => refreshIfRelevant(["#/recipes", "recipe-category", "scale-convert", "allergen-measurements", "#/profile", ...MEAL_PLAN_ROUTES]));
 window.addEventListener("mg-meal-plan-changed", () => refreshIfRelevant(MEAL_PLAN_ROUTES));

@@ -18,7 +18,8 @@ import {
 import {
   getAuth, onAuthStateChanged,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
-  updateProfile, sendPasswordResetEmail,
+  updateProfile, sendPasswordResetEmail, sendEmailVerification,
+  deleteUser, reauthenticateWithCredential, EmailAuthProvider,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache,
@@ -82,6 +83,15 @@ function communityDocId(uid, recipeId) {
 }
 function communityDocRef(uid, recipeId) {
   return doc(db, "communityRecipes", communityDocId(uid, recipeId));
+}
+
+// A small, PUBLIC mirror of just {username, avatar} for each account -- kept
+// in sync whenever either one changes (see claimUsername / changeUsername /
+// saveAvatar below). Lets any signed-in user look a friend up by username
+// (for Friends & Family sharing) without being able to read their email or
+// contact info, which stay locked to "users/{uid}" (own account + admin only).
+function publicProfileRef(uid) {
+  return doc(db, "publicProfiles", uid);
 }
 
 function subscribeToRecipes(uid) {
@@ -148,7 +158,7 @@ onAuthStateChanged(auth, async (user) => {
         console.error("Could not check free-access status", e);
       }
     }
-    currentUser = { uid: user.uid, email: user.email, username, contactInfo, avatar, isAdmin, hasFreeAccess };
+    currentUser = { uid: user.uid, email: user.email, username, contactInfo, avatar, isAdmin, hasFreeAccess, emailVerified: user.emailVerified };
     subscribeToRecipes(user.uid);
     subscribeToMealPlan(user.uid);
   } else {
@@ -180,6 +190,7 @@ async function claimUsername(uid, email, username) {
     if (existing.exists()) throw new Error("That username is already taken — try another.");
     tx.set(usernameRef, { uid });
     tx.set(userRef, { username: clean, email, contactInfo: "", createdAt: serverTimestamp() });
+    tx.set(publicProfileRef(uid), { username: clean, avatar: "" });
   });
   return clean;
 }
@@ -221,6 +232,13 @@ window.MG = {
       // Username claim failed after the account was created — the account
       // still exists, so surface the specific error rather than a generic one.
       throw new Error(err.message || "Could not finish setting up your account.");
+    }
+    // Best-effort: not being able to send this shouldn't block account
+    // creation -- the Profile page also offers a "Resend" button for later.
+    try {
+      await sendEmailVerification(cred.user);
+    } catch (err) {
+      console.error("Could not send verification email", err);
     }
   },
 
@@ -273,6 +291,7 @@ window.MG = {
       if (oldRef) tx.delete(oldRef);
       tx.set(newRef, { uid: currentUser.uid });
       tx.set(userRef, { username: clean }, { merge: true });
+      tx.set(publicProfileRef(currentUser.uid), { username: clean }, { merge: true });
     });
     try {
       await updateProfile(auth.currentUser, { displayName: clean });
@@ -287,8 +306,34 @@ window.MG = {
   saveAvatar: async (dataUrl) => {
     if (!currentUser) throw new Error("Not signed in.");
     await setDoc(doc(db, "users", currentUser.uid), { avatar: dataUrl }, { merge: true });
+    await setDoc(publicProfileRef(currentUser.uid), { avatar: dataUrl }, { merge: true });
     currentUser.avatar = dataUrl;
     dispatch("mg-auth-changed", { user: currentUser });
+  },
+
+  // ---- Email verification ----
+  resendVerificationEmail: async () => {
+    if (!auth.currentUser) throw new Error("Not signed in.");
+    try {
+      await sendEmailVerification(auth.currentUser);
+    } catch (err) {
+      throw new Error(friendlyAuthError(err));
+    }
+  },
+
+  // Firebase's local user object only reflects verification status as of
+  // the last sign-in/token refresh -- reload() re-checks with the server.
+  // Only dispatches "mg-auth-changed" when the value actually changed, so
+  // calling this on every Profile visit (see app.js) can't turn into a
+  // render loop.
+  refreshEmailVerified: async () => {
+    if (!auth.currentUser || !currentUser) return;
+    await auth.currentUser.reload();
+    const nowVerified = auth.currentUser.emailVerified;
+    if (currentUser.emailVerified !== nowVerified) {
+      currentUser.emailVerified = nowVerified;
+      dispatch("mg-auth-changed", { user: currentUser });
+    }
   },
 
   // ---- Friends & family free access (admin-only; enforced by security rules) ----
@@ -370,6 +415,7 @@ window.MG = {
       steps: recipe.steps,
       category: recipe.category || null,
       shared: !!recipe.shared,
+      photo: recipe.photo || "",
       updatedAt: serverTimestamp(),
     });
   },
@@ -389,6 +435,7 @@ window.MG = {
         steps: r.steps,
         category: r.category || null,
         shared: !!r.shared,
+        photo: r.photo || "",
         updatedAt: serverTimestamp(),
       });
     }
@@ -422,6 +469,7 @@ window.MG = {
       ingredients: recipe.ingredients,
       steps: recipe.steps,
       category: recipe.category || null,
+      photo: recipe.photo || "",
       authorUid: currentUser.uid,
       authorUsername: currentUser.username,
       sourceRecipeId: recipe.id,
@@ -444,8 +492,9 @@ window.MG = {
   },
 
   // Flags a community recipe for the admin (you) to look at manually in the
-  // Firebase console — there's no review queue in the app yet, just a place
-  // for reports to land. Requires sign-in so this can't be spammed anonymously.
+  // admin's own "Review Reports" screen (see listReports/dismissReport/
+  // removeReportedRecipe below) rather than anyone else. Requires sign-in
+  // so this can't be spammed anonymously.
   reportCommunityRecipe: async (communityRecipeId, reason) => {
     if (!currentUser) throw new Error("Please sign in to report a recipe.");
     await setDoc(doc(collection(db, "reports")), {
@@ -483,5 +532,146 @@ window.MG = {
   deleteComment: async (communityRecipeId, commentId) => {
     if (!currentUser) throw new Error("Not signed in.");
     await deleteDoc(doc(db, "communityRecipes", communityRecipeId, "comments", commentId));
+  },
+
+  // ---- Admin: review reported Community Recipes ----
+  listReports: async () => {
+    if (!currentUser || !currentUser.isAdmin) throw new Error("Only the app owner can view this.");
+    const snap = await getDocs(collection(db, "reports"));
+    const reports = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Best-effort: pull in the reported recipe's current title/author so the
+    // list is readable at a glance; a recipe that's since been removed just
+    // shows as unavailable rather than failing the whole list.
+    await Promise.all(reports.map(async (r) => {
+      try {
+        const recSnap = await getDoc(doc(db, "communityRecipes", r.communityRecipeId));
+        if (recSnap.exists()) {
+          r.recipeTitle = recSnap.data().title;
+          r.recipeAuthor = recSnap.data().authorUsername;
+        } else {
+          r.recipeTitle = "(already removed)";
+        }
+      } catch (e) {
+        r.recipeTitle = "(unavailable)";
+      }
+    }));
+    return reports;
+  },
+
+  // Clears a report without touching the recipe it was about -- for a
+  // report that turns out to be a non-issue.
+  dismissReport: async (reportId) => {
+    if (!currentUser || !currentUser.isAdmin) throw new Error("Only the app owner can do this.");
+    await deleteDoc(doc(db, "reports", reportId));
+  },
+
+  // Removes the reported recipe from the Community pool (its owner's
+  // private copy is untouched) and clears the report that flagged it.
+  removeReportedRecipe: async (communityRecipeId, reportId) => {
+    if (!currentUser || !currentUser.isAdmin) throw new Error("Only the app owner can do this.");
+    await deleteDoc(doc(db, "communityRecipes", communityRecipeId));
+    await deleteDoc(doc(db, "reports", reportId));
+  },
+
+  // ---- Friends & Family: direct recipe sharing ----
+  // Looks a username up via the SAME "usernames" mapping used at sign-up,
+  // but returns only what's in that account's public profile (username,
+  // avatar) -- never their email or contact info, unlike the admin-only
+  // lookupUserForGrant above. Any signed-in user can call this.
+  lookupPublicProfile: async (username) => {
+    if (!currentUser) throw new Error("Please sign in first.");
+    const key = (username || "").trim().toLowerCase();
+    if (!key) throw new Error("Please enter a username.");
+    const usernameSnap = await getDoc(doc(db, "usernames", key));
+    if (!usernameSnap.exists()) throw new Error("No account found with that username.");
+    const uid = usernameSnap.data().uid;
+    if (uid === currentUser.uid) throw new Error("That's your own username.");
+    const pubSnap = await getDoc(publicProfileRef(uid));
+    const data = pubSnap.exists() ? pubSnap.data() : {};
+    return { uid, username: data.username || username.trim(), avatar: data.avatar || "" };
+  },
+
+  // Drops a snapshot of the recipe (not a live reference) into the
+  // recipient's own "sharedWithMe" inbox -- so it shows up for them even
+  // though they can't read the sender's private recipes collection. They
+  // choose whether to add it to their own recipes from there.
+  shareRecipeToFriend: async (friendUid, recipe) => {
+    if (!currentUser) throw new Error("Not signed in.");
+    if (!friendUid) throw new Error("Couldn't find that person's account.");
+    await setDoc(doc(collection(db, "users", friendUid, "sharedWithMe")), {
+      recipe: {
+        title: recipe.title,
+        servings: recipe.servings,
+        ingredients: recipe.ingredients,
+        steps: recipe.steps,
+        category: recipe.category || null,
+        photo: recipe.photo || "",
+      },
+      fromUid: currentUser.uid,
+      fromUsername: currentUser.username || "someone",
+      sharedAt: serverTimestamp(),
+    });
+  },
+
+  listSharedWithMe: async () => {
+    if (!currentUser) throw new Error("Not signed in.");
+    const snap = await getDocs(collection(db, "users", currentUser.uid, "sharedWithMe"));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+
+  // Removes an inbox item -- used both for "Dismiss" and after "Add to My
+  // Recipes" has already copied it into the person's own recipes.
+  dismissSharedItem: async (shareId) => {
+    if (!currentUser) throw new Error("Not signed in.");
+    await deleteDoc(doc(db, "users", currentUser.uid, "sharedWithMe", shareId));
+  },
+
+  // ---- Account deletion ----
+  // Firebase requires a "recent" sign-in before it will let an account
+  // delete itself, so this re-confirms the password first. Firestore
+  // doesn't cascade deletes, so everything this account owns is cleaned up
+  // by hand, in an order that can't strand anything the security rules
+  // would then block: recipes/meal-plan/community copies (owned outright),
+  // then the username and public-profile mappings, then the account's own
+  // profile document, and finally the Firebase Auth account itself.
+  // Known limitation: comments this account left on OTHER people's
+  // community recipes, and a "grants/{uid}" free-access document from the
+  // admin, are left behind (comments stay attributed to the old username;
+  // a leftover grant is harmless since the account can no longer sign in
+  // to use it, and the admin's Friends & Family panel can still revoke it).
+  deleteAccount: async (password) => {
+    if (!currentUser) throw new Error("Not signed in.");
+    const user = auth.currentUser;
+    try {
+      const cred = EmailAuthProvider.credential(currentUser.email, password);
+      await reauthenticateWithCredential(user, cred);
+    } catch (err) {
+      throw new Error(friendlyAuthError(err));
+    }
+
+    const uid = currentUser.uid;
+    try {
+      for (const r of cloudRecipes) {
+        await deleteDoc(recipeDocRef(uid, r.id));
+        if (r.shared) {
+          try { await deleteDoc(communityDocRef(uid, r.id)); } catch (e) { /* already gone */ }
+        }
+      }
+      for (const date of Object.keys(cloudMealPlan)) {
+        await deleteDoc(mealPlanDocRef(uid, date));
+      }
+      if (currentUser.username) {
+        try { await deleteDoc(doc(db, "usernames", currentUser.username.toLowerCase())); } catch (e) { /* already gone */ }
+      }
+      try { await deleteDoc(publicProfileRef(uid)); } catch (e) { /* already gone */ }
+      if (!currentUser.isAdmin) {
+        try { await deleteDoc(doc(db, "grants", uid)); } catch (e) { /* no grant, or already gone */ }
+      }
+      await deleteDoc(doc(db, "users", uid));
+    } catch (err) {
+      throw new Error("Your password was correct, but something went wrong deleting your data: " + (err.message || err) + ". Please try again, or reach out for help.");
+    }
+
+    await deleteUser(user);
   },
 };
