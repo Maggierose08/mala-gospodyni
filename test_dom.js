@@ -569,7 +569,55 @@ async function main() {
   assert(window.document.getElementById("theme-switch-btn").classList.contains("on"), "revisiting Settings shows dark mode still on");
   window.document.getElementById("theme-switch-btn").click(); // back to light, so later tests render in the default theme
   assert(window.document.documentElement.getAttribute("data-theme") === "light", "clicking again switches back to light mode");
-  assert(/roadmap/i.test(window.document.getElementById("view").textContent), "Settings page is honest that a metric unit toggle isn't built yet");
+
+  // ---- Settings: units toggle (US customary vs metric) ----
+  go("#/settings");
+  const unitsBtn = window.document.getElementById("units-switch-btn");
+  assert(!!unitsBtn, "Settings page renders a units toggle");
+  assert(window.getStoredUnits() === "us", "units default to US customary");
+  assert(!unitsBtn.classList.contains("on"), "units switch starts off (US customary)");
+  unitsBtn.click();
+  assert(window.getStoredUnits() === "metric", "clicking the units switch turns metric on");
+  assert(unitsBtn.classList.contains("on"), "units switch shows on once metric is active");
+  assert(window.localStorage.getItem("mg_units_v1") === "metric", "metric choice is persisted to localStorage");
+  go("#/settings"); // re-render: the toggle should reflect the persisted choice
+  assert(window.document.getElementById("units-switch-btn").classList.contains("on"), "revisiting Settings shows metric still on");
+
+  // fmtQtyWithUnit: converts into the preferred system, keeping the
+  // original in parentheses, and falls back to the original alone when
+  // there's nothing useful to convert.
+  assert(window.fmtQtyWithUnit(1, "cup", "") === "236.59 mL (1 cup)", "1 cup shows its metric equivalent when metric is preferred, got: " + window.fmtQtyWithUnit(1, "cup", ""));
+  assert(window.fmtQtyWithUnit(1, "lb", "") === "453.59 g (1 lb)", "1 lb shows its metric equivalent when metric is preferred, got: " + window.fmtQtyWithUnit(1, "lb", ""));
+  assert(window.fmtQtyWithUnit(2, "", "eggs") === "2", "a unitless quantity (e.g. 2 eggs) is shown as-is regardless of unit preference");
+  assert(window.fmtQtyWithUnit(1, "mL", "") === "1 mL", "an amount already in the preferred (metric) system is shown without a redundant conversion");
+
+  // Ingredient amounts throughout the app pick this up automatically: the
+  // Scale Converter's scaled-output line and a Community recipe's detail
+  // view both go through fmtQtyWithUnit. (recipeId from the earlier Recipes
+  // test was already deleted by the delete-recipe test above, so this adds
+  // its own fresh recipe to scale.)
+  const metricTestRecipeId = window.newId();
+  await window.upsertRecipe({ id: metricTestRecipeId, title: "Metric Test Recipe", servings: 4, ingredients: [{ qty: 2, unit: "cup", name: "flour" }], steps: "", category: "", shared: false });
+  go("#/scale/convert/" + metricTestRecipeId);
+  const metricScaledRows = window.document.querySelectorAll("#scale-output .scaled-row");
+  assert(/mL/.test(metricScaledRows[0].textContent) && /cup/.test(metricScaledRows[0].textContent), "with metric preferred, the Scale Converter's scaled amount shows mL alongside the original cup amount, got: " + metricScaledRows[0].textContent);
+
+  // Altitude Adjustment: the one genuinely US-only corner (feet/°F/tbsp) —
+  // with metric preferred, the result appends a metric elevation + °C note
+  // without changing the underlying rule-of-thumb message itself.
+  go("#/temp/altitude");
+  const metricElevInput = window.document.getElementById("elevation-ft");
+  metricElevInput.value = "6000";
+  metricElevInput.dispatchEvent(new window.Event("input"));
+  const metricAltText = window.document.getElementById("altitude-result").textContent;
+  assert(/oven temperature/.test(metricAltText), "altitude adjustment still shows the usual guidance at 6000ft with metric preferred");
+  assert(/m elevation/.test(metricAltText) && /°C/.test(metricAltText), "with metric preferred, altitude adjustment also shows a metric elevation + °C note, got: " + metricAltText);
+
+  // Switch back to US customary so every later test (which was written and
+  // asserted against US-customary text) sees the default behavior again.
+  go("#/settings");
+  window.document.getElementById("units-switch-btn").click();
+  assert(window.getStoredUnits() === "us", "units switch back to US customary for the rest of the suite");
 
   // ---- Friends & Family: signed out ----
   go("#/friends");

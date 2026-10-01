@@ -97,6 +97,39 @@ function setTheme(theme) {
 }
 applyTheme(getStoredTheme());
 
+// ---------- Units (Settings: US customary vs metric) ----------
+// Same storage pattern as the theme above -- a per-device display
+// preference, not synced to the account. This NEVER changes what's
+// actually saved on a recipe, only how quantities are shown.
+//
+// fmtQtyWithUnit() below is what every read-only ingredient display
+// (Scale Converter output, Community recipe view, print, share, grocery
+// lists) uses instead of hand-rolling `${fmtQty(qty)} ${unit}` -- it shows
+// the amount converted to whichever system is preferred, with the
+// original kept in parentheses so nothing's ever lost, and falls back to
+// just the original when there's nothing useful to convert (no unit, or
+// it's already in the preferred system).
+const UNITS_KEY = "mg_units_v1";
+function getStoredUnits() {
+  try {
+    const stored = localStorage.getItem(UNITS_KEY);
+    if (stored === "us" || stored === "metric") return stored;
+  } catch (e) { /* localStorage unavailable */ }
+  return "us";
+}
+function setUnits(system) {
+  try { localStorage.setItem(UNITS_KEY, system); } catch (e) { /* ignore */ }
+}
+function fmtQtyWithUnit(qty, unit, ingredientName) {
+  const hasQty = !(qty === undefined || qty === null || qty === "" || isNaN(qty));
+  const originalText = [hasQty ? fmtQty(qty) : "", unit || ""].filter(Boolean).join(" ");
+  if (!hasQty) return originalText;
+  const converted = convertForDisplay(qty, unit, ingredientName, getStoredUnits());
+  if (!converted) return originalText;
+  const convertedText = `${converted.approximate ? "≈" : ""}${fmtQty(converted.value)} ${converted.unit}`;
+  return originalText ? `${convertedText} (${originalText})` : convertedText;
+}
+
 function hasCloud() {
   return typeof window.MG !== "undefined";
 }
@@ -851,8 +884,8 @@ function wireRecipeForm(id) {
 function recipePrintHtml(recipe) {
   const ingredientLines = (recipe.ingredients || []).length
     ? `<ul>${recipe.ingredients.map((i) => {
-        const qtyText = i.qty === undefined || i.qty === null || i.qty === "" || isNaN(i.qty) ? "" : fmtQty(i.qty);
-        return `<li>${escapeHtml([qtyText, i.unit, i.name].filter(Boolean).join(" "))}</li>`;
+        const amtText = fmtQtyWithUnit(i.qty, i.unit, i.name);
+        return `<li>${escapeHtml([amtText, i.name].filter(Boolean).join(" "))}</li>`;
       }).join("")}</ul>`
     : `<p>No ingredients listed.</p>`;
   return `
@@ -881,8 +914,8 @@ function printRecipe(recipe) {
 function recipeShareText(recipe) {
   const lines = [recipe.title || "(untitled recipe)", `${recipe.servings || "?"} servings`, "", "Ingredients:"];
   (recipe.ingredients || []).forEach((i) => {
-    const qtyText = i.qty === undefined || i.qty === null || i.qty === "" || isNaN(i.qty) ? "" : fmtQty(i.qty);
-    lines.push(`- ${[qtyText, i.unit, i.name].filter(Boolean).join(" ")}`);
+    const amtText = fmtQtyWithUnit(i.qty, i.unit, i.name);
+    lines.push(`- ${[amtText, i.name].filter(Boolean).join(" ")}`);
   });
   if (recipe.steps) { lines.push("", "Steps:", recipe.steps); }
   return lines.join("\n");
@@ -1032,7 +1065,7 @@ function renderMealPlanGrocery(weekStartParam) {
   const ingredientRows = ingredients.map((line) => {
     const key = ingredientKey(line.name, line.unit);
     const have = !!state.checked[key];
-    const amountText = [line.hasQty ? fmtQty(line.qty) : "", line.unit].filter(Boolean).join(" ");
+    const amountText = line.hasQty ? fmtQtyWithUnit(line.qty, line.unit, line.name) : (line.unit || "");
     return `
       <label class="grocery-row${have ? " have" : ""}" data-grocery-row-key="${escapeHtml(key)}">
         <input type="checkbox" class="grocery-chk" data-grocery-key="${escapeHtml(key)}" ${have ? "checked" : ""}>
@@ -1131,7 +1164,6 @@ function renderRecipePicker(selectedId, routePrefix) {
 // picker into `output`. Shared by the saved-recipe Scale Converter and the
 // ad-hoc (scanned-but-not-saved) one below, so the two stay in sync.
 function appendScaledIngredientRow(output, item, scaled) {
-  const unitLabel = item.unit || "";
   const nameText = (item.name || "").trim() || "(unnamed ingredient)";
 
   const line = document.createElement("div");
@@ -1142,7 +1174,7 @@ function appendScaledIngredientRow(output, item, scaled) {
 
   const rightWrap = document.createElement("span");
   rightWrap.className = "scaled-amt";
-  rightWrap.textContent = `${fmtQty(scaled)} ${unitLabel}`;
+  rightWrap.textContent = fmtQtyWithUnit(scaled, item.unit, item.name);
 
   line.appendChild(left);
   line.appendChild(rightWrap);
@@ -1634,13 +1666,24 @@ function renderTempAltitude() {
   `;
 }
 
+const FT_TO_M = 0.3048;
+
 function wireTempAltitude() {
   const elevationInput = document.getElementById("elevation-ft");
   const altResult = document.getElementById("altitude-result");
   elevationInput.addEventListener("input", () => {
     const ft = parseFloat(elevationInput.value);
     if (elevationInput.value === "" || isNaN(ft)) { altResult.textContent = ""; return; }
-    altResult.textContent = altitudeAdjustment(ft).message;
+    const adj = altitudeAdjustment(ft);
+    if (getStoredUnits() === "metric") {
+      const meters = ft * FT_TO_M;
+      const metricNote = adj.applies && adj.tempBumpF
+        ? ` In metric: about ${fmtNum(meters)} m elevation, raise the oven by roughly ${fmtNum(adj.tempBumpF * 5 / 9)}°C.`
+        : ` (about ${fmtNum(meters)} m)`;
+      altResult.textContent = adj.message + metricNote;
+    } else {
+      altResult.textContent = adj.message;
+    }
   });
 }
 
@@ -1715,12 +1758,11 @@ function renderRecipeCreator() {
 
 function renderGroceryList(ingredients) {
   return ingredients.map((item, idx) => {
-    const qtyText = item.qty == null ? "" : `${fmtQty(item.qty)} `;
-    const unitText = item.unit ? `${item.unit} ` : "";
+    const amtText = fmtQtyWithUnit(item.qty, item.unit, item.name);
     return `
       <label class="grocery-row" for="grocery-${idx}">
         <input type="checkbox" id="grocery-${idx}" class="grocery-chk">
-        <span class="grocery-text">${escapeHtml(qtyText + unitText + item.name)}</span>
+        <span class="grocery-text">${escapeHtml([amtText, item.name].filter(Boolean).join(" "))}</span>
       </label>
     `;
   }).join("");
@@ -2502,9 +2544,9 @@ function wireCommunityDetail(id) {
     }
     const ingredientRows = (recipe.ingredients || []).length
       ? recipe.ingredients.map((i) => {
-          const qtyText = i.qty === undefined || i.qty === null || i.qty === "" || isNaN(i.qty) ? "" : fmtQty(i.qty);
+          const amtText = fmtQtyWithUnit(i.qty, i.unit, i.name);
           return `
-          <div class="scaled-row"><span>${escapeHtml(i.name || "(unnamed ingredient)")}</span><span class="scaled-amt">${qtyText} ${i.unit || ""}</span></div>
+          <div class="scaled-row"><span>${escapeHtml(i.name || "(unnamed ingredient)")}</span><span class="scaled-amt">${amtText}</span></div>
         `;
         }).join("")
       : `<p class="muted-msg">No ingredients listed.</p>`;
@@ -2675,6 +2717,7 @@ function renderSubstitutionCategory(key) {
 // ---------- View: Settings ----------
 function renderSettings() {
   const theme = getStoredTheme();
+  const units = getStoredUnits();
   return `
     ${pageHeader("Settings")}
     <div class="card">
@@ -2689,18 +2732,33 @@ function renderSettings() {
     </div>
     <div class="card">
       <h2>Units</h2>
-      <p class="hint" style="margin-bottom:0;">A metric (g, mL, °C) vs. US customary (cups, oz, °F) toggle is still on the roadmap — for now the whole app uses US customary units.</p>
+      <div class="theme-toggle-row">
+        <div>
+          <div style="font-weight:600;">Metric measurements</div>
+          <p class="hint" style="margin:2px 0 0;">Show amounts in metric (g, mL, °C), with the original right alongside.</p>
+        </div>
+        <button class="theme-switch ${units === "metric" ? "on" : ""}" type="button" id="units-switch-btn" aria-pressed="${units === "metric"}" title="Toggle metric units"></button>
+      </div>
+      <p class="hint" style="margin:10px 0 0;">Recipes are always saved exactly as you entered them — this only changes how amounts are shown, never what's stored.</p>
     </div>
   `;
 }
 
 function wireSettings() {
-  const btn = document.getElementById("theme-switch-btn");
-  btn.addEventListener("click", () => {
+  const themeBtn = document.getElementById("theme-switch-btn");
+  themeBtn.addEventListener("click", () => {
     const next = getStoredTheme() === "dark" ? "light" : "dark";
     setTheme(next);
-    btn.classList.toggle("on", next === "dark");
-    btn.setAttribute("aria-pressed", String(next === "dark"));
+    themeBtn.classList.toggle("on", next === "dark");
+    themeBtn.setAttribute("aria-pressed", String(next === "dark"));
+  });
+
+  const unitsBtn = document.getElementById("units-switch-btn");
+  unitsBtn.addEventListener("click", () => {
+    const next = getStoredUnits() === "metric" ? "us" : "metric";
+    setUnits(next);
+    unitsBtn.classList.toggle("on", next === "metric");
+    unitsBtn.setAttribute("aria-pressed", String(next === "metric"));
   });
 }
 

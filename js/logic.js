@@ -30,6 +30,59 @@ function findDensity(ingredientName) {
   return null;
 }
 
+// Which measurement system each unit belongs to -- used by the Settings ->
+// Units toggle (app.js) to decide whether a given quantity already matches
+// what the person prefers to see, or needs converting for DISPLAY. A unit
+// that's in neither map (an empty "none / each" unit, or odd text from a
+// scanned recipe) has no system, so there's nothing to convert.
+const VOLUME_SYSTEM = { tsp: "us", tbsp: "us", cup: "us", "fl oz": "us", mL: "metric", L: "metric" };
+const WEIGHT_SYSTEM = { g: "metric", kg: "metric", oz: "us", lb: "us" };
+function unitSystem(unit) {
+  return VOLUME_SYSTEM[unit] || WEIGHT_SYSTEM[unit] || null;
+}
+
+// Picks a sensible unit to show an amount in within a given system, based
+// on its size -- e.g. 1500 mL reads better as 1.5 L, and 0.2 lb reads
+// better as 3.2 oz. Mirrors how a person would naturally write the amount
+// by hand, not just the smallest/largest unit available.
+function pickDisplayVolumeUnit(ml, system) {
+  if (system === "metric") return ml >= 1000 ? "L" : "mL";
+  if (ml >= VOLUME_TO_ML.cup) return "cup";
+  if (ml >= VOLUME_TO_ML.tbsp) return "tbsp";
+  return "tsp";
+}
+function pickDisplayWeightUnit(g, system) {
+  if (system === "metric") return g >= 1000 ? "kg" : "g";
+  return g >= WEIGHT_TO_G.lb ? "lb" : "oz";
+}
+
+// Converts a stored ingredient amount into the given measurement system for
+// DISPLAY ONLY -- this never changes what's actually saved on a recipe.
+// Returns null when there's nothing useful to show: the unit isn't a
+// recognized volume/weight unit (e.g. "each" or no unit), or it's already
+// in the requested system. Only ever converts within the same category
+// (volume<->volume or weight<->weight), so -- unlike convertUnit()'s
+// cross-category path -- this never depends on an ingredient's density and
+// is always exact, not approximate.
+function convertForDisplay(qty, unit, ingredientName, targetSystem) {
+  if (qty == null || qty === "" || isNaN(qty)) return null;
+  const fromSystem = unitSystem(unit);
+  if (!fromSystem || fromSystem === targetSystem) return null;
+  if (isVolume(unit)) {
+    const ml = qty * VOLUME_TO_ML[unit];
+    const displayUnit = pickDisplayVolumeUnit(ml, targetSystem);
+    const result = convertUnit(qty, unit, displayUnit, ingredientName);
+    return result.ok ? { value: result.value, unit: displayUnit, approximate: !!result.approximate } : null;
+  }
+  if (isWeight(unit)) {
+    const g = qty * WEIGHT_TO_G[unit];
+    const displayUnit = pickDisplayWeightUnit(g, targetSystem);
+    const result = convertUnit(qty, unit, displayUnit, ingredientName);
+    return result.ok ? { value: result.value, unit: displayUnit, approximate: !!result.approximate } : null;
+  }
+  return null;
+}
+
 function convertUnit(qty, fromUnit, toUnit, ingredientName) {
   if (fromUnit === toUnit) return { value: qty, ok: true };
   if (isVolume(fromUnit) && isVolume(toUnit)) {
@@ -153,6 +206,10 @@ function altitudeAdjustment(elevationFt) {
   return {
     applies: true,
     message: `At ${Math.round(elevationFt).toLocaleString()} ft, general high-altitude baking guidance suggests: ${tempNote}; ${leaveningNote}; ${liquidNote}; and ${sugarNote}. These are rule-of-thumb starting points, not a guarantee — the right adjustment really depends on the specific recipe.`,
+    // Exposed separately (not just baked into the message above) so a
+    // metric-preferring display can convert it to a °C delta without
+    // having to parse the sentence -- 0 when no temperature bump applies.
+    tempBumpF,
   };
 }
 
