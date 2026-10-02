@@ -1,0 +1,17 @@
+{
+  "name": "mala-gospodyni-functions",
+  "description": "Cloud Functions for Mala Gospodyni (currently: the one-time premium welcome email)",
+  "private": true,
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0"
+  }
+}
