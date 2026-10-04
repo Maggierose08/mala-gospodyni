@@ -20,6 +20,29 @@ It has a built-in off-switch (`PREMIUM_EMAIL_ENABLED`) that defaults to
 off, so even if this folder gets deployed before you're ready, it won't
 send anything until you flip that on.
 
+## Where replies go
+
+Resend (the service this uses to send) only sends mail — it doesn't come
+with an inbox. The email's "from" address (`RESEND_FROM_ADDRESS`) won't
+receive anything unless you've separately set up real mailbox hosting for
+it, so by default a reply to it would just bounce or vanish, even though
+the email's own wording says "just reply to this email."
+
+The fix is `RESEND_REPLY_TO` (see `.env.example`): set it to an inbox you
+actually check — your own Gmail is fine, it doesn't need to be on the same
+domain as the "from" address — and people's "Reply" button routes there
+instead, regardless of what "from" shows. The function treats this the
+same as the other required settings: if it's enabled but this isn't set,
+it skips sending rather than send something that promises a reply path
+that doesn't exist.
+
+(If you'd rather replies arrive at a real branded address like
+`hello@yourdomain.com` instead of your personal Gmail, that needs actual
+mailbox hosting on that domain — e.g. Google Workspace, or a free
+forwarding service like ImprovMX that just relays to your Gmail. Happy to
+help set that up later if you want it; `RESEND_REPLY_TO` is the simpler
+option that needs nothing extra.)
+
 ## Before this can actually send anything, in order
 
 1. **Finalize the email content.** Open `premiumWelcomeEmail.js` and
@@ -48,9 +71,10 @@ send anything until you flip that on.
 
 4. **Set the real configuration**, once you have the above two things.
    Easiest: copy `.env.example` in this folder to `.env.mala-gospodyni` and
-   fill in the three values (`PREMIUM_EMAIL_ENABLED=true`, your real
-   `RESEND_API_KEY`, and `RESEND_FROM_ADDRESS` using your verified domain).
-   That file is already in `.gitignore` — it should never be committed.
+   fill in all four values (`PREMIUM_EMAIL_ENABLED=true`, your real
+   `RESEND_API_KEY`, `RESEND_FROM_ADDRESS` using your verified domain, and
+   `RESEND_REPLY_TO` — see "Where replies go" above). That file is already
+   in `.gitignore` — it should never be committed.
 
 5. **Install dependencies and deploy.** From this `functions/` folder:
    ```

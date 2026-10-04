@@ -29,20 +29,29 @@ admin.initializeApp();
 // API, which Firebase has been moving projects away from.
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
 const RESEND_FROM_ADDRESS = process.env.RESEND_FROM_ADDRESS || "";
+// Resend only SENDS mail -- the "from" address above doesn't come with an
+// inbox, so unless that address separately has real mailbox hosting behind
+// it, a reply to it just bounces or vanishes. Setting this tells people's
+// mail clients to route "Reply" to an inbox that actually exists (e.g.
+// Maggie's own address) instead, regardless of what "from" shows. See the
+// "Where replies go" section in functions/README.md.
+const RESEND_REPLY_TO = process.env.RESEND_REPLY_TO || "";
 const PREMIUM_EMAIL_ENABLED = process.env.PREMIUM_EMAIL_ENABLED === "true";
 
 async function sendViaResend({ to, subject, html, text }) {
+  const body = { from: RESEND_FROM_ADDRESS, to: [to], subject, html, text };
+  if (RESEND_REPLY_TO) body.reply_to = RESEND_REPLY_TO;
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${RESEND_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ from: RESEND_FROM_ADDRESS, to: [to], subject, html, text }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Resend API error ${res.status}: ${body}`);
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Resend API error ${res.status}: ${errBody}`);
   }
 }
 
@@ -78,6 +87,14 @@ exports.sendPremiumWelcomeEmail = functions.auth.user().onCreate(async (user) =>
   }
   if (!RESEND_API_KEY || !RESEND_FROM_ADDRESS) {
     functions.logger.error("Premium welcome email is enabled but RESEND_API_KEY / RESEND_FROM_ADDRESS isn't configured -- skipping.", { uid: user.uid });
+    return;
+  }
+  // The email text says "just reply to this email" -- that's only true if
+  // replies actually land somewhere. Treat a missing reply-to the same as
+  // missing the other required config, rather than silently sending an
+  // email that promises something that won't work.
+  if (!RESEND_REPLY_TO) {
+    functions.logger.error("Premium welcome email is enabled but RESEND_REPLY_TO isn't set, so replies would go nowhere -- skipping.", { uid: user.uid });
     return;
   }
   if (!user.email) {
