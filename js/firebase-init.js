@@ -34,7 +34,7 @@ import {
 // security rules, which check this same email server-side on every single
 // read/write to the "grants" collection. Changing this constant here does
 // NOT grant anyone anything; only publishing matching security rules does.
-const ADMIN_EMAIL = "maggie13a2z@gmail.com";
+const ADMIN_EMAIL = "malagospodyni@gmail.com";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD29WcDaRhoxUmPWXx_aOQlYtfYC2IUHKs",

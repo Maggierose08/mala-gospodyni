@@ -976,7 +976,7 @@ async function main() {
 
   // ---- Profile (signed in, admin) — mocked window.MG with isAdmin:true ----
   const grants = [{ uid: "u2", grantedTo: "janes_kitchen", granted: true }];
-  const adminUser = { uid: "admin1", email: "maggie13a2z@gmail.com", username: "maggie", contactInfo: "", avatar: "", isAdmin: true, emailVerified: true };
+  const adminUser = { uid: "admin1", email: "malagospodyni@gmail.com", username: "maggie", contactInfo: "", avatar: "", isAdmin: true, emailVerified: true };
   let reportsMock = [
     { id: "r1", communityRecipeId: "friend1_abc", reporterUid: "u9", reason: "wrong ingredients", recipeTitle: "Golabki", recipeAuthor: "babcia_anna" },
   ];

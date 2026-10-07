@@ -9,7 +9,7 @@ service cloud.firestore {
       // avatar/username/contact info before free access is actually
       // granted, and so the granted-list can show current avatars.
       allow read: if request.auth != null
-        && (request.auth.uid == userId || request.auth.token.email == "maggie13a2z@gmail.com");
+        && (request.auth.uid == userId || request.auth.token.email == "malagospodyni@gmail.com");
       allow create, update: if request.auth != null && request.auth.uid == userId;
       // Self-serve account deletion cleans up this doc itself (after
       // re-authenticating and deleting everything it owns) -- only the
@@ -76,8 +76,8 @@ service cloud.firestore {
     // ---- Free ("comped") access grants for friends & family -- admin-managed ----
     match /grants/{uid} {
       allow read: if request.auth != null
-        && (request.auth.uid == uid || request.auth.token.email == "maggie13a2z@gmail.com");
-      allow write: if request.auth != null && request.auth.token.email == "maggie13a2z@gmail.com";
+        && (request.auth.uid == uid || request.auth.token.email == "malagospodyni@gmail.com");
+      allow write: if request.auth != null && request.auth.token.email == "malagospodyni@gmail.com";
       // An account can also remove its OWN grant doc (only), as part of
       // deleting itself -- this can only revoke free access from yourself,
       // never touch anyone else's, so it doesn't weaken the admin-only
@@ -102,7 +102,7 @@ service cloud.firestore {
       // Reports screen.
       allow delete: if request.auth != null
         && (resource.data.authorUid == request.auth.uid
-            || request.auth.token.email == "maggie13a2z@gmail.com");
+            || request.auth.token.email == "malagospodyni@gmail.com");
 
       // ---- Comments left on this community recipe ----
       match /comments/{commentId} {
@@ -117,7 +117,7 @@ service cloud.firestore {
         allow delete: if request.auth != null
           && (resource.data.authorUid == request.auth.uid
               || get(/databases/$(database)/documents/communityRecipes/$(docId)).data.authorUid == request.auth.uid
-              || request.auth.token.email == "maggie13a2z@gmail.com");
+              || request.auth.token.email == "malagospodyni@gmail.com");
       }
     }
 
@@ -130,7 +130,7 @@ service cloud.firestore {
       // never editable, by anyone, including the admin.
       allow create: if request.auth != null
         && request.resource.data.reporterUid == request.auth.uid;
-      allow read, delete: if request.auth != null && request.auth.token.email == "maggie13a2z@gmail.com";
+      allow read, delete: if request.auth != null && request.auth.token.email == "malagospodyni@gmail.com";
       allow update: if false;
     }
   }
