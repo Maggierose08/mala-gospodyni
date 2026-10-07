@@ -118,6 +118,33 @@ async function ensureEmailLookup(user) {
   }
 }
 
+// Keeps users/{uid}.email in sync if the account's real sign-in email ever
+// changes after signup (e.g. via MG.changeEmail) -- that field is only ever
+// written once, at signup, so without this it would silently go stale.
+// Also retires the OLD email's "emailLookup" entry so Friends & Family can
+// no longer find this account under an email it doesn't use anymore;
+// ensureEmailLookup (called alongside this) takes care of creating the
+// entry for the new email. Fire-and-forget, same pattern as that function.
+async function syncAccountEmailIfChanged(uid, oldEmail, newEmail) {
+  if (!newEmail || oldEmail === newEmail) return;
+  try {
+    await setDoc(doc(db, "users", uid), { email: newEmail }, { merge: true });
+  } catch (e) {
+    console.error("Could not update stored email", e);
+  }
+  if (oldEmail) {
+    try {
+      const oldRef = emailLookupRef(oldEmail);
+      const snap = await getDoc(oldRef);
+      if (snap.exists() && snap.data().uid === uid) {
+        await deleteDoc(oldRef);
+      }
+    } catch (e) {
+      console.error("Could not clean up old email lookup", e);
+    }
+  }
+}
+
 function subscribeToRecipes(uid) {
   if (recipesUnsubscribe) recipesUnsubscribe();
   recipesUnsubscribe = onSnapshot(
@@ -158,6 +185,7 @@ onAuthStateChanged(auth, async (user) => {
     let username = user.displayName || "";
     let contactInfo = "";
     let avatar = "";
+    let storedEmail = "";
     const isAdmin = user.email === ADMIN_EMAIL;
     try {
       const userSnap = await getDoc(doc(db, "users", user.uid));
@@ -165,6 +193,7 @@ onAuthStateChanged(auth, async (user) => {
         username = userSnap.data().username || username;
         contactInfo = userSnap.data().contactInfo || "";
         avatar = userSnap.data().avatar || "";
+        storedEmail = userSnap.data().email || "";
       }
     } catch (e) {
       console.error("Could not load profile", e);
@@ -188,6 +217,7 @@ onAuthStateChanged(auth, async (user) => {
     // Fire-and-forget (errors are caught inside) -- doesn't need to block
     // sign-in finishing, it just needs to happen eventually.
     ensureEmailLookup(user);
+    syncAccountEmailIfChanged(user.uid, storedEmail, user.email);
   } else {
     currentUser = null;
   }
