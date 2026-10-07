@@ -20,6 +20,7 @@ import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
   updateProfile, sendPasswordResetEmail, sendEmailVerification,
   deleteUser, reauthenticateWithCredential, EmailAuthProvider,
+  verifyBeforeUpdateEmail,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache,
@@ -361,6 +362,30 @@ window.MG = {
       currentUser.emailVerified = nowVerified;
       dispatch("mg-auth-changed", { user: currentUser });
     }
+  },
+
+  // ---- Change the account's sign-in email ----
+  // The Firebase console no longer offers a direct "edit email" option (for
+  // security reasons), so this is the supported replacement: it re-checks
+  // the password, then sends a confirmation LINK to the NEW address. The
+  // sign-in email doesn't actually change until that link is opened and
+  // clicked FROM THE NEW ADDRESS's inbox -- this account's old email stays
+  // the valid sign-in email until then, so nothing breaks if the link is
+  // never clicked. Not wired to any UI button yet -- call it from the
+  // browser console as window.MG.changeEmail(newEmail, currentPassword)
+  // while signed in as the account whose email is changing.
+  changeEmail: async (newEmail, password) => {
+    if (!currentUser || !auth.currentUser) throw new Error("Not signed in.");
+    const clean = (newEmail || "").trim().toLowerCase();
+    if (!clean || !clean.includes("@")) throw new Error("Please enter a valid email address.");
+    try {
+      const cred = EmailAuthProvider.credential(currentUser.email, password);
+      await reauthenticateWithCredential(auth.currentUser, cred);
+      await verifyBeforeUpdateEmail(auth.currentUser, clean);
+    } catch (err) {
+      throw new Error(friendlyAuthError(err));
+    }
+    return `Confirmation link sent to ${clean}. Open it from that inbox to finish changing the sign-in email.`;
   },
 
   // ---- Friends & family free access (admin-only; enforced by security rules) ----
