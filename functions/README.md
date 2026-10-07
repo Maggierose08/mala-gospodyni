@@ -29,18 +29,20 @@ it, so by default a reply to it would just bounce or vanish, even though
 the email's own wording says "just reply to this email."
 
 The fix is `RESEND_REPLY_TO` (see `.env.example`): set it to an inbox you
-actually check — your own Gmail is fine, it doesn't need to be on the same
-domain as the "from" address — and people's "Reply" button routes there
-instead, regardless of what "from" shows. The function treats this the
-same as the other required settings: if it's enabled but this isn't set,
-it skips sending rather than send something that promises a reply path
-that doesn't exist.
+actually check, and people's "Reply" button routes there instead of to the
+"from" address. The function treats this the same as the other required
+settings: if it's enabled but this isn't set, it skips sending rather than
+send something that promises a reply path that doesn't exist.
+
+`.env.example` already has this set to `malagospodyni@gmail.com` — the
+dedicated Gmail account set up for the app, separate from Maggie's
+personal inbox. It doesn't need to match the sending domain to work.
 
 (If you'd rather replies arrive at a real branded address like
-`hello@yourdomain.com` instead of your personal Gmail, that needs actual
-mailbox hosting on that domain — e.g. Google Workspace, or a free
-forwarding service like ImprovMX that just relays to your Gmail. Happy to
-help set that up later if you want it; `RESEND_REPLY_TO` is the simpler
+`hello@yourdomain.com` instead, that needs actual mailbox hosting on that
+domain — e.g. Google Workspace, or a free forwarding service like
+ImprovMX that just relays to malagospodyni@gmail.com. Happy to help set
+that up later if you want it; `RESEND_REPLY_TO` as-is is the simpler
 option that needs nothing extra.)
 
 ## Before this can actually send anything, in order
