@@ -1463,7 +1463,11 @@ function wireAllergenCheck() {
     results.innerHTML = matches.map((m) => `
       <div class="match">
         <span class="cat-tag">${m.label}</span>
-        <div style="margin-top:4px;">${m.suggestion}</div>
+        <div class="sub-amount">${m.amount}</div>
+        <ul class="sub-options">
+          ${m.options.map((o) => `<li>${o}</li>`).join("")}
+        </ul>
+        ${m.note ? `<div class="sub-note muted-msg">${m.note}</div>` : ""}
       </div>`).join("");
   });
 }

@@ -318,6 +318,10 @@ button.btn svg { width: 15px; height: 15px; vertical-align: -3px; margin-right: 
   display: inline-block; font-size: 0.68rem; text-transform: uppercase;
   background: var(--sage-solid); color: #fff; border-radius: 4px; padding: 1px 6px; margin-left: 6px;
 }
+.allergen-results-box .match .sub-amount { font-weight: 700; color: var(--sage-dark); margin-top: 4px; }
+.allergen-results-box .match .sub-options { margin: 4px 0 0; padding-left: 20px; }
+.allergen-results-box .match .sub-options li { margin-bottom: 2px; }
+.allergen-results-box .match .sub-note { margin-top: 6px; font-size: 0.85rem; }
 
 .disclaimer {
   margin-top: 14px;

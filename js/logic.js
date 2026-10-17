@@ -260,23 +260,89 @@ function checkAllergens(ingredientNames, selectedCategories) {
   return results;
 }
 
-// Looks up substitution ideas for a single typed-in ingredient against
-// every allergen category at once (unlike checkAllergens, which only looks
-// at categories the user has pre-selected) -- e.g. "soy sauce" matches both
-// the gluten and soy entries. Used by the "Check Your Own Ingredients" tab,
-// which is a direct one-ingredient-in / substitutions-out lookup rather
-// than a whole-recipe check.
+// Per-ingredient substitution entries for the "Check Your Own Ingredients"
+// tab -- unlike ALLERGEN_MAP above (one broad paragraph per allergen
+// category, covering several ingredients at once), each entry here is
+// scoped to ONE specific ingredient, so typing "butter" only ever shows the
+// butter swap, not milk's and cheese's too. `options` is a list (rendered
+// as an actual list in the UI, not a run-on sentence); `note` is an
+// optional extra caveat line.
+const INGREDIENT_SUBSTITUTIONS = [
+  // ---- Dairy ----
+  { category: "dairy", label: "Dairy", keywords: ["buttermilk"], amount: "1 cup buttermilk",
+    options: ["1 cup dairy-free milk + 1 tbsp lemon juice or vinegar (let sit 5 minutes)"] },
+  { category: "dairy", label: "Dairy", keywords: ["milk"], amount: "1 cup milk",
+    options: ["1 cup almond milk", "1 cup oat milk", "1 cup soy milk"] },
+  { category: "dairy", label: "Dairy", keywords: ["butter"], amount: "1 cup butter",
+    options: ["1 cup vegan butter", "about 3/4 cup neutral oil"] },
+  { category: "dairy", label: "Dairy", keywords: ["cheese"], amount: "1 cup shredded cheese",
+    options: ["2–3 tbsp nutritional yeast (to taste)", "a vegan cheese swap"] },
+  { category: "dairy", label: "Dairy", keywords: ["cream"], amount: "1 cup heavy cream",
+    options: ["1 cup full-fat coconut cream", "1 cup cashew cream"] },
+  { category: "dairy", label: "Dairy", keywords: ["yogurt"], amount: "1 cup yogurt",
+    options: ["1 cup unsweetened dairy-free yogurt (coconut, almond, or oat based)"] },
+  // ---- Egg ----
+  { category: "egg", label: "Egg", keywords: ["egg"], amount: "1 egg",
+    options: ["1 tbsp ground flaxseed + 3 tbsp water (rest 5 minutes)", "1/4 cup unsweetened applesauce", "1/2 a mashed banana"] },
+  // ---- Gluten ----
+  { category: "gluten", label: "Gluten", keywords: ["flour"], amount: "1 cup flour",
+    options: ["1 cup certified gluten-free 1:1 baking blend"],
+    note: "Almond or oat flour are NOT 1:1 swaps — they're denser and usually need recipe adjustments beyond a simple substitution." },
+  { category: "gluten", label: "Gluten", keywords: ["wheat"], amount: "wheat",
+    options: ["a certified gluten-free flour blend (see \"flour\" above for the swap ratio)"] },
+  { category: "gluten", label: "Gluten", keywords: ["breadcrumbs"], amount: "1 cup breadcrumbs",
+    options: ["1 cup gluten-free breadcrumbs", "crushed gluten-free crackers", "crushed rice cereal"] },
+  { category: "gluten", label: "Gluten", keywords: ["pasta"], amount: "pasta",
+    options: ["a certified gluten-free pasta (rice, corn, chickpea, or lentil based) — cook time may differ, so check the package"] },
+  { category: "gluten", label: "Gluten", keywords: ["soy sauce"], amount: "1 tbsp soy sauce",
+    options: ["1 tbsp tamari (double-check the label — not all tamari is gluten-free)", "1 tbsp coconut aminos"] },
+  // ---- Nuts (every tree-nut/peanut keyword shares the same swap logic,
+  // so these stay grouped as one entry rather than split per nut type) ----
+  { category: "nuts", label: "Nuts", keywords: ["peanut", "almond", "walnut", "cashew", "pecan", "hazelnut", "pistachio"],
+    amount: "1 cup nut butter",
+    options: ["1 cup sunflower seed butter", "1 cup soy nut butter", "1 cup pumpkin seed butter"],
+    note: "For chopped nuts in baking, toasted sunflower or pumpkin seeds work well, or just leave them out. Always check labels for cross-contamination warnings." },
+  // ---- Soy ----
+  { category: "soy", label: "Soy", keywords: ["soy sauce"], amount: "1 tbsp soy sauce",
+    options: ["1 tbsp tamari (check it's labeled soy-free if needed)", "1 tbsp coconut aminos"] },
+  { category: "soy", label: "Soy", keywords: ["soy milk"], amount: "1 cup soy milk",
+    options: ["1 cup oat milk", "1 cup coconut milk"] },
+  { category: "soy", label: "Soy", keywords: ["tofu"], amount: "1 cup cubed tofu",
+    options: ["1 cup chickpeas or white beans (for protein and texture)", "chickpea-flour \"tofu\" (besan tofu)"] },
+  { category: "soy", label: "Soy", keywords: ["edamame"], amount: "edamame",
+    options: ["fresh or frozen green peas", "lima beans"] },
+];
+
+// Looks up substitution ideas for a single typed-in ingredient against every
+// allergen category at once (unlike checkAllergens, which only looks at
+// categories the user has pre-selected). Used by the "Check Your Own
+// Ingredients" tab, which is a direct one-ingredient-in / substitutions-out
+// lookup rather than a whole-recipe check.
+//
+// Keyword matching is substring-based (so "soy sauce" matches "soy" in a
+// longer phrase), which means a typed name can contain more than one
+// keyword at different specificities -- e.g. "buttermilk" contains both
+// "butter" and "buttermilk". Only the MOST SPECIFIC (longest) matching
+// keyword(s) are kept, so typing "buttermilk" shows just the buttermilk
+// swap rather than also pulling in the shorter, less relevant "butter"
+// entry. Entries tied at the same length (e.g. "soy sauce" matching both
+// the gluten and soy entries) are both kept, since they're equally specific
+// and both genuinely relevant.
 function findIngredientSubstitutions(rawName) {
   const name = (rawName || "").toLowerCase();
   if (!name.trim()) return [];
-  const results = [];
-  for (const cat of Object.keys(ALLERGEN_MAP)) {
-    const def = ALLERGEN_MAP[cat];
-    if (def.keywords.some((k) => name.includes(k))) {
-      results.push({ category: cat, label: def.label, suggestion: def.suggestion });
+  const scored = [];
+  let maxLen = 0;
+  for (const entry of INGREDIENT_SUBSTITUTIONS) {
+    const bestKeyword = entry.keywords
+      .filter((k) => name.includes(k))
+      .sort((a, b) => b.length - a.length)[0];
+    if (bestKeyword) {
+      scored.push({ entry, len: bestKeyword.length });
+      if (bestKeyword.length > maxLen) maxLen = bestKeyword.length;
     }
   }
-  return results;
+  return scored.filter((s) => s.len === maxLen).map((s) => s.entry);
 }
 
 function fmtNum(n) {
@@ -1565,7 +1631,7 @@ const SUBSTITUTION_CATEGORIES = [
 // for the Node-based test script.
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
-    VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, SAFE_MEAT_TEMPS, POPULAR_CONVERSIONS, OVEN_TYPES, ALLERGEN_MAP,
+    VOLUME_TO_ML, WEIGHT_TO_G, DENSITY_G_PER_CUP, OVEN_TEMP_QUICK_REF, SAFE_MEAT_TEMPS, POPULAR_CONVERSIONS, OVEN_TYPES, ALLERGEN_MAP, INGREDIENT_SUBSTITUTIONS,
     findDensity, convertUnit, scaleQty, fToC, cToF, altitudeAdjustment, checkAllergens, findIngredientSubstitutions, fmtNum, fmtQty,
     parseOcrText,
     RECIPE_TEMPLATES, detectDietaryFilters, parseServingsFromRequest, matchRecipeTemplates, generateRecipe,
