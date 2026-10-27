@@ -391,6 +391,17 @@ function getOcrWorker(onProgress) {
       corePath: tesseractAssetUrl("js/vendor/tesseract/tesseract-core-simd-lstm.js"),
       langPath: tesseractAssetUrl("js/vendor/tesseract/lang"),
       gzip: true,
+      // By default Tesseract.js loads its worker script by wrapping it in a
+      // blob: URL (a workaround for loading the engine from a DIFFERENT
+      // origin, e.g. a CDN). We self-host everything on our own origin, so
+      // that workaround isn't needed -- and it actively breaks things here:
+      // once the worker script runs from a blob: URL, the engine's own
+      // internal code can no longer correctly resolve the relative path to
+      // its .wasm file ("Failed to parse URL from ...wasm"), since a blob:
+      // URL has no real directory to resolve against. Setting this to false
+      // makes it load the worker directly from its real URL instead, which
+      // keeps relative-path resolution working normally.
+      workerBlobURL: false,
       logger: (m) => { if (onProgress) onProgress(m); },
     });
     // Belt-and-suspenders: if the engine still somehow never loads (a flaky
