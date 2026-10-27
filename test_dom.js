@@ -218,8 +218,30 @@ async function main() {
   const ingredientCheckInput = window.document.getElementById("ingredient-check-input");
   ingredientCheckInput.value = "milk";
   ingredientCheckInput.dispatchEvent(new window.Event("input"));
-  const ingredientCheckResults = window.document.getElementById("ingredient-check-results").textContent;
-  assert(/dairy/i.test(ingredientCheckResults) && /almond, oat, or soy milk/i.test(ingredientCheckResults), "typing 'milk' shows the dairy substitution suggestion, got: " + ingredientCheckResults);
+  const ingredientCheckResultsEl = window.document.getElementById("ingredient-check-results");
+  const ingredientCheckResults = ingredientCheckResultsEl.textContent;
+  assert(/dairy/i.test(ingredientCheckResults) && /almond milk/i.test(ingredientCheckResults) && /oat milk/i.test(ingredientCheckResults) && /soy milk/i.test(ingredientCheckResults), "typing 'milk' shows the dairy substitution options, got: " + ingredientCheckResults);
+  const milkOptionItems = ingredientCheckResultsEl.querySelectorAll(".sub-options li");
+  assert(milkOptionItems.length === 3, "typing 'milk' renders its substitutions as a list (3 <li> items), got " + milkOptionItems.length);
+
+  // Specificity: "butter" should ONLY show butter's own swap, not get the
+  // whole dairy category's milk/cheese/cream/etc. substitutions bundled in
+  // alongside it.
+  ingredientCheckInput.value = "butter";
+  ingredientCheckInput.dispatchEvent(new window.Event("input"));
+  const butterResultsEl = window.document.getElementById("ingredient-check-results");
+  const butterResults = butterResultsEl.textContent;
+  assert(/vegan butter/i.test(butterResults), "typing 'butter' shows the butter substitution, got: " + butterResults);
+  assert(!/almond milk/i.test(butterResults) && !/nutritional yeast/i.test(butterResults), "typing 'butter' does NOT also show milk's or cheese's substitutions, got: " + butterResults);
+  assert(butterResultsEl.querySelectorAll(".match").length === 1, "typing 'butter' shows exactly one result block, got " + butterResultsEl.querySelectorAll(".match").length);
+
+  // "buttermilk" contains the substring "butter", but should match its own
+  // more specific entry instead of (or in addition to) the generic "butter" one.
+  ingredientCheckInput.value = "buttermilk";
+  ingredientCheckInput.dispatchEvent(new window.Event("input"));
+  const buttermilkResultsEl = window.document.getElementById("ingredient-check-results");
+  assert(/buttermilk/i.test(buttermilkResultsEl.textContent), "typing 'buttermilk' shows the buttermilk substitution, got: " + buttermilkResultsEl.textContent);
+  assert(buttermilkResultsEl.querySelectorAll(".match").length === 1, "typing 'buttermilk' shows exactly one result block (not also the generic 'butter' one), got " + buttermilkResultsEl.querySelectorAll(".match").length);
 
   ingredientCheckInput.value = "soy sauce";
   ingredientCheckInput.dispatchEvent(new window.Event("input"));

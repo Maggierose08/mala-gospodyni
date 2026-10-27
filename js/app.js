@@ -369,15 +369,42 @@ function el(html) {
 // ---------- Scan a Recipe (OCR, fully in-browser via bundled Tesseract) ----------
 // A worker is created once and reused across scans (creating one loads the
 // ~6MB OCR engine + language data, so we don't want to repeat that per scan).
+//
+// workerPath/corePath/langPath are resolved to FULL absolute URLs (not left
+// as relative paths like "js/vendor/tesseract/..."). Tesseract's worker runs
+// in its own background thread, and the wasm-loading code inside it resolves
+// a relative path against ITS OWN context rather than the page's -- in some
+// browsers/network conditions that produces an unparseable URL ("Failed to
+// parse URL from tesseract-core-simd-lstm.wasm"), which makes the wasm
+// engine silently fail to ever load: the worker never settles, "Loading the
+// scanner…" just spins forever, and nothing times out or errors. Absolute
+// URLs remove that ambiguity entirely.
+function tesseractAssetUrl(relativePath) {
+  return new URL(relativePath, document.baseURI).href;
+}
+
 let ocrWorkerPromise = null;
 function getOcrWorker(onProgress) {
   if (!ocrWorkerPromise) {
-    ocrWorkerPromise = Tesseract.createWorker("eng", undefined, {
-      workerPath: "js/vendor/tesseract/worker.min.js",
-      corePath: "js/vendor/tesseract/tesseract-core-simd-lstm.js",
-      langPath: "js/vendor/tesseract/lang",
+    const workerReady = Tesseract.createWorker("eng", undefined, {
+      workerPath: tesseractAssetUrl("js/vendor/tesseract/worker.min.js"),
+      corePath: tesseractAssetUrl("js/vendor/tesseract/tesseract-core-simd-lstm.js"),
+      langPath: tesseractAssetUrl("js/vendor/tesseract/lang"),
       gzip: true,
       logger: (m) => { if (onProgress) onProgress(m); },
+    });
+    // Belt-and-suspenders: if the engine still somehow never loads (a flaky
+    // connection, a browser extension interfering, etc.), fail with a clear
+    // message after 45s instead of leaving the user staring at an endless
+    // "Loading the scanner…" with no way to know anything went wrong. A
+    // failed attempt also resets ocrWorkerPromise so the next scan attempt
+    // gets a fresh try rather than being stuck reusing the same dead promise.
+    const timeout = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Timed out loading the scanner. Please check your connection and try again.")), 45000);
+    });
+    ocrWorkerPromise = Promise.race([workerReady, timeout]).catch((err) => {
+      ocrWorkerPromise = null;
+      throw err;
     });
   }
   return ocrWorkerPromise;
@@ -416,6 +443,7 @@ function wireScanControl(idPrefix, onResult) {
     preview.appendChild(img);
 
     status.textContent = "Loading the scanner (first time only, this can take a bit)…";
+    let workerLoaded = false;
     try {
       const worker = await getOcrWorker((m) => {
         if (m.status === "recognizing text") {
@@ -424,6 +452,7 @@ function wireScanControl(idPrefix, onResult) {
           status.textContent = m.status + "…";
         }
       });
+      workerLoaded = true;
       status.textContent = "Reading your photo…";
       const { data } = await worker.recognize(file);
       const parsed = parseOcrText(data.text || "");
@@ -431,7 +460,9 @@ function wireScanControl(idPrefix, onResult) {
       onResult(parsed);
     } catch (err) {
       console.error("OCR scan failed", err);
-      status.textContent = "Sorry, that photo couldn't be read. Try a clearer or better-lit photo, or type the recipe in by hand.";
+      status.textContent = workerLoaded
+        ? "Sorry, that photo couldn't be read. Try a clearer or better-lit photo, or type the recipe in by hand."
+        : "Sorry, the scanner couldn't load (likely a connection hiccup). Please try again, or type the recipe in by hand.";
     }
   });
 }
